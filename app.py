@@ -33,7 +33,7 @@ class BtcTuiApp(App):
 
     #stats-bar, #trade-status, #spot-status {
         height: 1;
-        background: $panel;
+        background: $panel 60%;
         padding: 0 1;
     }
     #charts-row { height: 1fr; }

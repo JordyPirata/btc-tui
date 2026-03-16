@@ -18,7 +18,7 @@ class PlotWidget(Static):
     PlotWidget {
         width: 1fr;
         height: 100%;
-        border: solid $panel-darken-2;
+        border: solid $panel-darken-2 60%;
         background: transparent;
     }
     """

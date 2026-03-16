@@ -42,8 +42,8 @@ class HelpModal(ModalScreen):
     HelpModal > Static {
         width: 52;
         height: auto;
-        border: thick $accent;
-        background: $surface;
+        border: thick $accent 60%;
+        background: $surface 60%;
         padding: 1 2;
     }
     """
@@ -59,11 +59,11 @@ class AddTradeModal(ModalScreen):
     AddTradeModal > Vertical {
         width: 64;
         height: 90%;
-        border: thick $accent;
-        background: $surface;
+        border: thick $accent 60%;
+        background: $surface 60%;
         padding: 0;
     }
-    AddTradeModal #hint      { background: $panel; padding: 0 2; height: 1; color: $text-muted; }
+    AddTradeModal #hint      { background: $panel 60%; padding: 0 2; height: 1; color: $text-muted; }
     AddTradeModal #title     { text-align: center; margin: 1 0; color: $text; }
     AddTradeModal Label      { margin-top: 1; color: $text-muted; }
     AddTradeModal ScrollableContainer { padding: 0 2 1 2; background: transparent; }
@@ -171,11 +171,11 @@ class AddSpotModal(ModalScreen):
     AddSpotModal > Vertical {
         width: 56;
         height: auto;
-        border: thick $accent;
-        background: $surface;
+        border: thick $accent 60%;
+        background: $surface 60%;
         padding: 0;
     }
-    AddSpotModal #hint  { background: $panel; padding: 0 2; height: 1; color: $text-muted; }
+    AddSpotModal #hint  { background: $panel 60%; padding: 0 2; height: 1; color: $text-muted; }
     AddSpotModal #title { text-align: center; margin: 1 0; color: $text; }
     AddSpotModal Label  { margin-top: 1; color: $text-muted; }
     AddSpotModal ScrollableContainer { padding: 0 2 1 2; background: transparent; height: auto; }
