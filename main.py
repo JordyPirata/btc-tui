@@ -33,13 +33,15 @@ HELP_TEXT = """\
 
   [bold]1[/bold]          Dashboard
   [bold]2[/bold]          Trades
-  [bold]A[/bold]          Agregar trade
-  [bold]D[/bold]          Eliminar trade seleccionado
+  [bold]3[/bold]          Spot
+  [bold]A[/bold]          Agregar trade (en tab Trades)
+  [bold]S[/bold]          Agregar entrada spot (en tab Spot)
+  [bold]D[/bold]          Eliminar fila seleccionada
   [bold]R[/bold]          Actualizar precio BTC
   [bold]?[/bold]          Esta ayuda
   [bold]Q[/bold]          Salir
 
-[dim]— Formulario de trade —[/dim]
+[dim]— Formularios —[/dim]
   [bold]Ctrl+S[/bold]     Guardar
   [bold]Escape[/bold]     Cancelar / cerrar
 
@@ -301,6 +303,83 @@ class AddTradeModal(ModalScreen):
 
 
 # ---------------------------------------------------------------------------
+# Modal: Agregar Spot
+# ---------------------------------------------------------------------------
+
+
+class AddSpotModal(ModalScreen):
+    DEFAULT_CSS = """
+    AddSpotModal { align: center middle; }
+    AddSpotModal > Vertical {
+        width: 56;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 0;
+    }
+    AddSpotModal #spot-hint {
+        background: $panel;
+        padding: 0 2;
+        color: $text-muted;
+        height: 1;
+    }
+    AddSpotModal ScrollableContainer {
+        padding: 0 2 1 2;
+        background: transparent;
+        height: auto;
+    }
+    AddSpotModal Label {
+        margin-top: 1;
+        color: $text-muted;
+    }
+    AddSpotModal #spot-title {
+        text-align: center;
+        margin: 1 0;
+        color: $text;
+    }
+    """
+    BINDINGS = [
+        ("ctrl+s", "save_spot", "Guardar"),
+        ("escape", "cancel_spot", "Cancelar"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        today = datetime.now().strftime("%Y-%m-%d")
+        with Vertical():
+            yield Static(
+                "[dim]  Ctrl+S[/dim] [white]guardar[/white]"
+                "   [dim]Esc[/dim] [white]cancelar[/white]",
+                id="spot-hint",
+            )
+            with ScrollableContainer():
+                yield Label("[bold]Agregar Spot[/bold]", id="spot-title")
+                yield Label("Sats  [dim](+ ingreso / – retiro)[/dim]")
+                yield Input(id="s-sats", placeholder="100000")
+                yield Label("Fecha (YYYY-MM-DD)")
+                yield Input(value=today, id="s-date")
+                yield Label("Notas")
+                yield Input(id="s-notes", placeholder="Retiro de profits, compra OTC...")
+
+    def action_save_spot(self) -> None:
+        sats_str = self.query_one("#s-sats", Input).value.strip()
+        date_str = self.query_one("#s-date", Input).value.strip()
+        notes    = self.query_one("#s-notes", Input).value.strip()
+
+        try:
+            sats = int(sats_str)
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            self.notify("Sats debe ser entero y fecha YYYY-MM-DD.", severity="error")
+            return
+
+        entry = tr.add_spot_entry(date_str, sats, notes)
+        self.dismiss(entry)
+
+    def action_cancel_spot(self) -> None:
+        self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
 # App principal
 # ---------------------------------------------------------------------------
 
@@ -340,19 +419,22 @@ class BtcTuiApp(App):
     """
 
     BINDINGS = [
-        ("1",           "goto_dashboard",   "Dashboard"),
-        ("2",           "goto_trades",      "Trades"),
-        ("a",           "add_trade",        "Agregar"),
-        ("d",           "delete_trade",     "Eliminar"),
-        ("r",           "refresh_data",     "Actualizar"),
+        ("1",             "goto_dashboard", "Dashboard"),
+        ("2",             "goto_trades",    "Trades"),
+        ("3",             "goto_spot",      "Spot"),
+        ("a",             "add_trade",      "Agregar trade"),
+        ("s",             "add_spot",       "Agregar spot"),
+        ("d",             "delete_row",     "Eliminar"),
+        ("r",             "refresh_data",   "Actualizar"),
         ("question_mark", "show_help",      "Ayuda"),
-        ("q",           "quit",             "Salir"),
+        ("q",             "quit",           "Salir"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self._current_price = 0.0
         self._trades: list[dict] = []
+        self._spot: list[dict] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -365,15 +447,18 @@ class BtcTuiApp(App):
             with TabPane("Trades", id="tab-trades"):
                 yield Static("", id="trade-status")
                 yield DataTable(id="trades-table", zebra_stripes=True, cursor_type="row")
+            with TabPane("Spot", id="tab-spot"):
+                yield Static("", id="spot-status")
+                yield DataTable(id="spot-table", zebra_stripes=True, cursor_type="row")
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "BTC Futures"
-        table = self.query_one("#trades-table", DataTable)
-        table.add_columns(
-            "ID", "Dir", "Estado", "P&L (sats)", "Fees",
-            "Margin", "Lev", "Entrada", "Liq.", "Fecha", "Notas",
-        )
+        t = self.query_one("#trades-table", DataTable)
+        t.add_columns("ID", "Dir", "Estado", "P&L (sats)", "Fees",
+                      "Margin", "Lev", "Entrada", "Liq.", "Fecha", "Notas")
+        s = self.query_one("#spot-table", DataTable)
+        s.add_columns("ID", "Fecha", "Sats", "Notas")
         self.action_refresh_data()
 
     # ------------------------------------------------------------------
@@ -391,14 +476,18 @@ class BtcTuiApp(App):
     def _update_ui(self, price: float) -> None:
         self._current_price = price
         self._trades = tr.load_trades()
-        s = tr.compute_stats(self._trades, price)
+        self._spot   = tr.load_spot()
+        s = tr.compute_stats(self._trades, self._spot, price)
+        sign = "+" if s["spot_usd"] >= 0 else ""
         self.sub_title = (
             f"BTC ${price:,.0f}"
-            f"  │  Spot {'+'if s['spot_usd']>=0 else ''}${s['spot_usd']:,.2f} USD"
+            f"  │  Spot {sign}${s['spot_usd']:,.2f} USD"
         )
         self._refresh_stats_bar(s)
         self._refresh_trade_status(s, price)
+        self._refresh_spot_status(s)
         self._refresh_table()
+        self._refresh_spot_table()
         self._refresh_charts()
 
     def _refresh_stats_bar(self, s: dict) -> None:
@@ -413,7 +502,8 @@ class BtcTuiApp(App):
             f" [dim]({s['winners']}W·{s['losers']}L)[/dim]"
             f"   Mejor [green]{fmt_sats(s['best'])}[/green]"
             f"   Peor [red]{fmt_sats(s['worst'])}[/red]"
-            f"   Spot [{spot_c}]${s['spot_usd']:,.2f} USD[/{spot_c}]"
+            f"   Spot manual [cyan]{s['spot_manual']:+,} sats[/cyan]"
+            f"   Total spot [{spot_c}]${s['spot_usd']:,.2f} USD[/{spot_c}]"
         )
 
     def _refresh_trade_status(self, s: dict, price: float) -> None:
@@ -423,6 +513,13 @@ class BtcTuiApp(App):
             f"   [white]{s['filled']}[/white] filled"
             f" · [dim]{s['canceled']} canceled[/dim]"
             f"   [dim]↑↓ navegar  ·  A agregar  ·  D eliminar[/dim]"
+        )
+
+    def _refresh_spot_status(self, s: dict) -> None:
+        spot_c = "green" if s["spot_manual"] >= 0 else "red"
+        self.query_one("#spot-status", Static).update(
+            f"Total spot manual [{spot_c}]{s['spot_manual']:+,} sats[/{spot_c}]"
+            f"   [dim]{len(self._spot)} entradas  ·  S agregar  ·  D eliminar[/dim]"
         )
 
     def _refresh_table(self) -> None:
@@ -449,6 +546,21 @@ class BtcTuiApp(App):
                 key=t["id"],
             )
 
+    def _refresh_spot_table(self) -> None:
+        table = self.query_one("#spot-table", DataTable)
+        table.clear()
+        cumulative = 0
+        for e in reversed(self._spot):
+            cumulative += e["sats"]
+            sats_c = "green" if e["sats"] >= 0 else "red"
+            table.add_row(
+                e["id"],
+                e["date"],
+                f"[{sats_c}]{e['sats']:+,}[/{sats_c}]",
+                e.get("notes", ""),
+                key=e["id"],
+            )
+
     def _refresh_charts(self) -> None:
         timeline = tr.get_pnl_timeline(self._trades)
         if not timeline:
@@ -469,6 +581,9 @@ class BtcTuiApp(App):
     def action_goto_trades(self) -> None:
         self.query_one(TabbedContent).active = "tab-trades"
 
+    def action_goto_spot(self) -> None:
+        self.query_one(TabbedContent).active = "tab-spot"
+
     def action_add_trade(self) -> None:
         self.push_screen(AddTradeModal(), self._on_added)
 
@@ -477,7 +592,26 @@ class BtcTuiApp(App):
             self.notify(f"Trade {trade['id']} guardado.", severity="information", timeout=3)
             self._update_ui(self._current_price)
 
-    def action_delete_trade(self) -> None:
+    def action_add_spot(self) -> None:
+        self.push_screen(AddSpotModal(), self._on_spot_added)
+
+    def _on_spot_added(self, entry: dict | None) -> None:
+        if entry:
+            sign = "+" if entry["sats"] >= 0 else ""
+            self.notify(
+                f"Spot {entry['id']}: {sign}{entry['sats']:,} sats guardado.",
+                severity="information", timeout=3,
+            )
+            self._update_ui(self._current_price)
+
+    def action_delete_row(self) -> None:
+        active = self.query_one(TabbedContent).active
+        if active == "tab-spot":
+            self._delete_spot()
+        elif active == "tab-trades":
+            self._delete_trade()
+
+    def _delete_trade(self) -> None:
         table = self.query_one("#trades-table", DataTable)
         if table.row_count == 0:
             self.notify("No hay trades.", severity="warning")
@@ -486,6 +620,19 @@ class BtcTuiApp(App):
             trade_id = str(table.get_row_at(table.cursor_row)[0])
             tr.delete_trade(trade_id)
             self.notify(f"Trade {trade_id} eliminado.", severity="warning", timeout=3)
+            self._update_ui(self._current_price)
+        except Exception as e:
+            self.notify(f"Error: {e}", severity="error")
+
+    def _delete_spot(self) -> None:
+        table = self.query_one("#spot-table", DataTable)
+        if table.row_count == 0:
+            self.notify("No hay entradas spot.", severity="warning")
+            return
+        try:
+            entry_id = str(table.get_row_at(table.cursor_row)[0])
+            tr.delete_spot_entry(entry_id)
+            self.notify(f"Spot {entry_id} eliminado.", severity="warning", timeout=3)
             self._update_ui(self._current_price)
         except Exception as e:
             self.notify(f"Error: {e}", severity="error")

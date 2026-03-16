@@ -8,22 +8,39 @@ from pathlib import Path
 DATA_FILE = Path("data/trades.json")
 SATS = 100_000_000  # sats per BTC
 
+_EMPTY = {"trades": [], "spot": []}
 
-def load_trades() -> list[dict]:
+
+def _load() -> dict:
     if not DATA_FILE.exists():
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DATA_FILE.write_text('{"trades": []}')
-        return []
+        DATA_FILE.write_text(json.dumps(_EMPTY, indent=2))
+        return {"trades": [], "spot": []}
     try:
         data = json.loads(DATA_FILE.read_text())
-        return sorted(data.get("trades", []), key=lambda t: t["creation_date"])
+        data.setdefault("spot", [])
+        return data
     except Exception:
-        return []
+        return {"trades": [], "spot": []}
+
+
+def _save(data: dict) -> None:
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DATA_FILE.write_text(json.dumps(data, indent=2))
+
+
+def load_trades() -> list[dict]:
+    return sorted(_load()["trades"], key=lambda t: t["creation_date"])
+
+
+def load_spot() -> list[dict]:
+    return sorted(_load()["spot"], key=lambda e: e["date"])
 
 
 def save_trades(trades: list[dict]) -> None:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DATA_FILE.write_text(json.dumps({"trades": trades}, indent=2))
+    data = _load()
+    data["trades"] = trades
+    _save(data)
 
 
 def add_trade(fields: dict) -> dict:
@@ -58,39 +75,65 @@ def delete_trade(trade_id: str) -> None:
     save_trades([t for t in trades if t["id"] != trade_id])
 
 
-def compute_stats(trades: list[dict], btc_price_usd: float) -> dict:
+# ---------------------------------------------------------------------------
+# Spot entries
+# ---------------------------------------------------------------------------
+
+
+def add_spot_entry(date: str, sats: int, notes: str = "") -> dict:
+    data = _load()
+    entry = {
+        "id": str(uuid.uuid4())[:8],
+        "date": date,
+        "sats": int(sats),   # positivo = ingreso, negativo = retiro
+        "notes": notes,
+    }
+    data["spot"].append(entry)
+    data["spot"].sort(key=lambda e: e["date"])
+    _save(data)
+    return entry
+
+
+def delete_spot_entry(entry_id: str) -> None:
+    data = _load()
+    data["spot"] = [e for e in data["spot"] if e["id"] != entry_id]
+    _save(data)
+
+
+def compute_stats(trades: list[dict], spot: list[dict], btc_price_usd: float) -> dict:
     filled = [t for t in trades if t["status"] == "Filled"]
 
-    total_pnl = sum(t["pnl"] for t in filled)           # sats
-    total_fees = sum(t["trading_fees"] + t["funding_cost"] for t in filled)  # sats
-    net_pnl = total_pnl - total_fees                    # sats
+    total_pnl  = sum(t["pnl"] for t in filled)
+    total_fees = sum(t["trading_fees"] + t["funding_cost"] for t in filled)
+    net_pnl    = total_pnl - total_fees
 
-    winners = [t for t in filled if t["pnl"] > 0]
-    losers  = [t for t in filled if t["pnl"] <= 0]
+    winners  = [t for t in filled if t["pnl"] > 0]
+    losers   = [t for t in filled if t["pnl"] <= 0]
     win_rate = (len(winners) / len(filled) * 100) if filled else 0.0
 
     best  = max((t["pnl"] for t in filled), default=0)
     worst = min((t["pnl"] for t in filled), default=0)
 
-    # Único valor en USD: spot acumulado
-    spot_btc = net_pnl / SATS
-    spot_usd = spot_btc * btc_price_usd
+    spot_manual = sum(e["sats"] for e in spot)
+    total_spot_sats = net_pnl + spot_manual
+    spot_usd = total_spot_sats / SATS * btc_price_usd
 
     return {
         "total_trades": len(trades),
-        "filled": len(filled),
-        "canceled": len(trades) - len(filled),
-        "winners": len(winners),
-        "losers": len(losers),
-        "win_rate": win_rate,
-        "total_pnl": total_pnl,
-        "total_fees": total_fees,
-        "net_pnl": net_pnl,
-        "best": best,
-        "worst": worst,
-        "spot_btc": spot_btc,
-        "spot_usd": spot_usd,
-        "btc_price": btc_price_usd,
+        "filled":       len(filled),
+        "canceled":     len(trades) - len(filled),
+        "winners":      len(winners),
+        "losers":       len(losers),
+        "win_rate":     win_rate,
+        "total_pnl":    total_pnl,
+        "total_fees":   total_fees,
+        "net_pnl":      net_pnl,
+        "best":         best,
+        "worst":        worst,
+        "spot_manual":  spot_manual,
+        "total_spot_sats": total_spot_sats,
+        "spot_usd":     spot_usd,
+        "btc_price":    btc_price_usd,
     }
 
 
