@@ -8,10 +8,9 @@ import requests
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button,
     DataTable,
     Footer,
     Header,
@@ -29,6 +28,27 @@ BTC_PRICE_URL = (
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
 )
 
+HELP_TEXT = """\
+[bold cyan]Atajos de teclado[/bold cyan]
+
+  [bold]1[/bold]          Dashboard
+  [bold]2[/bold]          Trades
+  [bold]A[/bold]          Agregar trade
+  [bold]D[/bold]          Eliminar trade seleccionado
+  [bold]R[/bold]          Actualizar precio BTC
+  [bold]?[/bold]          Esta ayuda
+  [bold]Q[/bold]          Salir
+
+[dim]— Formulario de trade —[/dim]
+  [bold]Ctrl+S[/bold]     Guardar
+  [bold]Escape[/bold]     Cancelar / cerrar
+
+[dim]— Tabla —[/dim]
+  [bold]↑ ↓[/bold]        Navegar filas
+  [bold]PgUp PgDn[/bold]  Saltar páginas
+
+[dim]Presiona Escape para cerrar[/dim]"""
+
 
 def fetch_btc_price() -> float:
     try:
@@ -38,10 +58,9 @@ def fetch_btc_price() -> float:
         return 0.0
 
 
-def fmt_sats(n: int) -> str:
-    """Formatea sats con signo y separadores de miles."""
-    sign = "+" if n > 0 else ""
-    return f"{sign}{n:,} sats"
+def fmt_sats(n: int, sign: bool = True) -> str:
+    s = "+" if (sign and n > 0) else ""
+    return f"{s}{n:,}"
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +73,8 @@ class PlotWidget(Static):
     PlotWidget {
         width: 1fr;
         height: 100%;
-        border: solid $accent;
+        border: solid $panel-darken-2;
+        background: transparent;
     }
     """
 
@@ -72,21 +92,16 @@ class PlotWidget(Static):
         self._redraw()
 
     def update_line(self, dates: list[str], values: list[float]) -> None:
-        self._dates = dates
-        self._values = values
-        self._bar_mode = False
+        self._dates, self._values, self._bar_mode = dates, values, False
         self._redraw()
 
     def update_bars(self, dates: list[str], values: list[float]) -> None:
-        self._dates = dates
-        self._values = values
-        self._bar_mode = True
+        self._dates, self._values, self._bar_mode = dates, values, True
         self._redraw()
 
     def _redraw(self) -> None:
         w = max(self.size.width - 2, 10)
         h = max(self.size.height - 2, 5)
-
         plt.clf()
         plt.plotsize(w, h)
         plt.title(self._title)
@@ -95,60 +110,60 @@ class PlotWidget(Static):
         if self._dates and self._values:
             x = list(range(len(self._dates)))
             if self._bar_mode:
-                colors = ["green" if v >= 0 else "red" for v in self._values]
-                plt.bar(x, self._values, color=colors)
+                plt.bar(x, self._values,
+                        color=["green" if v >= 0 else "red" for v in self._values])
             else:
                 plt.plot(x, self._values, marker="braille")
                 plt.hline(0, "white")
-
             step = max(1, len(x) // 6)
             plt.xticks(x[::step], [self._dates[i] for i in x[::step]])
         else:
-            plt.text("Sin datos — agrega trades con [A]", x=1, y=1)
+            plt.text("Sin datos  —  [A] para agregar tu primer trade", x=1, y=1)
 
         self.update(Text.from_ansi(plt.build()))
 
 
-class StatCard(Static):
+# ---------------------------------------------------------------------------
+# Modales
+# ---------------------------------------------------------------------------
+
+
+class HelpModal(ModalScreen):
     DEFAULT_CSS = """
-    StatCard {
-        width: 1fr;
-        height: 5;
-        border: solid $panel;
-        padding: 0 1;
-        content-align: center middle;
-        text-align: center;
+    HelpModal { align: center middle; }
+    HelpModal > Static {
+        width: 52;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
     }
     """
+    BINDINGS = [("escape", "dismiss", "Cerrar"), ("question_mark", "dismiss", "Cerrar")]
 
-    def __init__(self, label: str, **kwargs) -> None:
-        super().__init__("", **kwargs)
-        self._label = label
-
-    def on_mount(self) -> None:
-        self._draw("—", "white")
-
-    def set_value(self, value: str, color: str = "white") -> None:
-        self._draw(value, color)
-
-    def _draw(self, value: str, color: str) -> None:
-        self.update(f"[dim]{self._label}[/dim]\n[bold {color}]{value}[/bold {color}]")
-
-
-# ---------------------------------------------------------------------------
-# Modal: Agregar Trade
-# ---------------------------------------------------------------------------
+    def compose(self) -> ComposeResult:
+        yield Static(HELP_TEXT)
 
 
 class AddTradeModal(ModalScreen):
     DEFAULT_CSS = """
     AddTradeModal { align: center middle; }
-    AddTradeModal > ScrollableContainer {
-        width: 66;
+    AddTradeModal > Vertical {
+        width: 64;
         height: 90%;
         border: thick $accent;
         background: $surface;
-        padding: 1 2;
+        padding: 0;
+    }
+    AddTradeModal #modal-hint {
+        background: $panel;
+        padding: 0 2;
+        color: $text-muted;
+        height: 1;
+    }
+    AddTradeModal ScrollableContainer {
+        padding: 0 2 1 2;
+        background: transparent;
     }
     AddTradeModal Label {
         margin-top: 1;
@@ -156,78 +171,80 @@ class AddTradeModal(ModalScreen):
     }
     AddTradeModal #modal-title {
         text-align: center;
-        margin-bottom: 1;
+        margin: 1 0;
         color: $text;
     }
-    AddTradeModal Horizontal {
-        margin-top: 1;
-        height: auto;
-    }
-    AddTradeModal Button { width: 1fr; margin: 0 1; }
     """
+    BINDINGS = [
+        ("ctrl+s", "save_trade", "Guardar"),
+        ("escape", "cancel_modal", "Cancelar"),
+    ]
 
     def compose(self) -> ComposeResult:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        with ScrollableContainer():
-            yield Label("[bold]Agregar Trade[/bold]", id="modal-title")
-
-            yield Label("Dirección")
-            yield Select([("Long ↑", "Long"), ("Short ↓", "Short")], id="f-direction", value="Long")
-
-            yield Label("Estado")
-            yield Select(
-                [("Filled ✅", "Filled"), ("Canceled ❌", "Canceled"), ("Open 🔄", "Open")],
-                id="f-status", value="Filled",
+        with Vertical():
+            yield Static(
+                "[dim]  Ctrl+S[/dim] [white]guardar[/white]"
+                "   [dim]Esc[/dim] [white]cancelar[/white]",
+                id="modal-hint",
             )
+            with ScrollableContainer():
+                yield Label("[bold]Nuevo Trade[/bold]", id="modal-title")
 
-            yield Label("P&L (sats)")
-            yield Input(id="f-pnl", placeholder="0  (negativo si fue pérdida)")
+                yield Label("Dirección")
+                yield Select([("Long ↑", "Long"), ("Short ↓", "Short")],
+                             id="f-direction", value="Long")
 
-            yield Label("Quantity (sats)")
-            yield Input(id="f-quantity", placeholder="2000")
+                yield Label("Estado")
+                yield Select(
+                    [("Filled ✅", "Filled"), ("Canceled ❌", "Canceled"), ("Open 🔄", "Open")],
+                    id="f-status", value="Filled",
+                )
 
-            yield Label("Trade Margin (sats)")
-            yield Input(id="f-trade-margin", placeholder="198117")
+                yield Label("P&L (sats — negativo si fue pérdida)")
+                yield Input(id="f-pnl", placeholder="0")
 
-            yield Label("Margin (sats)")
-            yield Input(id="f-margin", placeholder="204257")
+                yield Label("Quantity (sats)")
+                yield Input(id="f-quantity", placeholder="2000")
 
-            yield Label("Leverage")
-            yield Input(id="f-leverage", placeholder="15.0")
+                yield Label("Trade Margin (sats)")
+                yield Input(id="f-trade-margin", placeholder="198117")
 
-            yield Label("Precio entrada (USD)")
-            yield Input(id="f-price", placeholder="67300")
+                yield Label("Margin (sats)")
+                yield Input(id="f-margin", placeholder="204257")
 
-            yield Label("Liquidación (USD)")
-            yield Input(id="f-liquidation", placeholder="63094")
+                yield Label("Leverage")
+                yield Input(id="f-leverage", placeholder="15.0")
 
-            yield Label("Stoploss (USD)")
-            yield Input(id="f-sl", placeholder="66627")
+                yield Label("Precio entrada (USD)")
+                yield Input(id="f-price", placeholder="67300")
 
-            yield Label("Takeprofit (USD)")
-            yield Input(id="f-tp", placeholder="126000")
+                yield Label("Liquidación (USD)")
+                yield Input(id="f-liquidation", placeholder="63094")
 
-            yield Label("Trading fees (sats)")
-            yield Input(id="f-fees", placeholder="0")
+                yield Label("Stoploss (USD)")
+                yield Input(id="f-sl", placeholder="66627")
 
-            yield Label("Funding cost (sats)")
-            yield Input(id="f-funding", placeholder="0")
+                yield Label("Takeprofit (USD)")
+                yield Input(id="f-tp", placeholder="126000")
 
-            yield Label("Fecha creación (YYYY-MM-DD HH:MM)")
-            yield Input(value=now, id="f-created", placeholder="2026-02-08 20:41")
+                yield Label("Trading fees (sats)")
+                yield Input(id="f-fees", placeholder="0")
 
-            yield Label("Fecha filled (dejar vacío si no aplica)")
-            yield Input(id="f-filled", placeholder="2026-02-08 22:10")
+                yield Label("Funding cost (sats)")
+                yield Input(id="f-funding", placeholder="0")
 
-            yield Label("ID externo (opcional)")
-            yield Input(id="f-id", placeholder="e0ad7f33-c690...")
+                yield Label("Fecha creación (YYYY-MM-DD HH:MM)")
+                yield Input(value=now, id="f-created")
 
-            yield Label("Notas")
-            yield Input(id="f-notes", placeholder="Estrategia, contexto...")
+                yield Label("Fecha filled (vacío si no aplica)")
+                yield Input(id="f-filled", placeholder="2026-02-08 22:10")
 
-            with Horizontal():
-                yield Button("Guardar", id="btn-save", variant="primary")
-                yield Button("Cancelar", id="btn-cancel")
+                yield Label("ID externo (opcional)")
+                yield Input(id="f-id", placeholder="e0ad7f33-c690...")
+
+                yield Label("Notas")
+                yield Input(id="f-notes", placeholder="Estrategia, contexto...")
 
     def _get(self, id_: str, default: str = "") -> str:
         return self.query_one(id_, Input).value.strip() or default
@@ -244,8 +261,7 @@ class AddTradeModal(ModalScreen):
         except ValueError:
             return 0.0
 
-    @on(Button.Pressed, "#btn-save")
-    def save(self) -> None:
+    def action_save_trade(self) -> None:
         direction = self.query_one("#f-direction", Select).value
         status = self.query_one("#f-status", Select).value
         created = self._get("#f-created")
@@ -253,37 +269,34 @@ class AddTradeModal(ModalScreen):
         if direction is Select.BLANK or status is Select.BLANK or not created:
             self.notify("Dirección, estado y fecha son obligatorios.", severity="error")
             return
-
         try:
             datetime.strptime(created, "%Y-%m-%d %H:%M")
         except ValueError:
             self.notify("Fecha inválida. Formato: YYYY-MM-DD HH:MM", severity="error")
             return
 
-        fields = {
-            "id": self._get("#f-id"),
-            "direction": direction,
-            "status": status,
-            "pnl": self._int("#f-pnl"),
-            "quantity": self._int("#f-quantity"),
+        trade = tr.add_trade({
+            "id":           self._get("#f-id"),
+            "direction":    direction,
+            "status":       status,
+            "pnl":          self._int("#f-pnl"),
+            "quantity":     self._int("#f-quantity"),
             "trade_margin": self._int("#f-trade-margin"),
-            "margin": self._int("#f-margin"),
-            "leverage": self._float("#f-leverage"),
-            "price": self._float("#f-price"),
-            "liquidation": self._float("#f-liquidation"),
-            "stoploss": self._float("#f-sl"),
-            "takeprofit": self._float("#f-tp"),
+            "margin":       self._int("#f-margin"),
+            "leverage":     self._float("#f-leverage"),
+            "price":        self._float("#f-price"),
+            "liquidation":  self._float("#f-liquidation"),
+            "stoploss":     self._float("#f-sl"),
+            "takeprofit":   self._float("#f-tp"),
             "trading_fees": self._int("#f-fees"),
             "funding_cost": self._int("#f-funding"),
             "creation_date": created,
-            "filled_date": self._get("#f-filled"),
-            "notes": self._get("#f-notes"),
-        }
-        trade = tr.add_trade(fields)
+            "filled_date":  self._get("#f-filled"),
+            "notes":        self._get("#f-notes"),
+        })
         self.dismiss(trade)
 
-    @on(Button.Pressed, "#btn-cancel")
-    def cancel(self) -> None:
+    def action_cancel_modal(self) -> None:
         self.dismiss(None)
 
 
@@ -294,25 +307,46 @@ class AddTradeModal(ModalScreen):
 
 class BtcTuiApp(App):
     CSS = """
+    /* ── Global ───────────────────────────────────────── */
     Screen { background: $background; }
-    #stats-row  { height: 5; margin: 0 0 1 0; }
-    #charts-row { height: 1fr; }
-    #trades-controls { height: 3; margin-bottom: 1; }
-    #trades-controls Button { margin-right: 1; }
-    #info-label {
-        width: 1fr;
-        content-align: right middle;
-        color: $text-muted;
-        padding-right: 1;
+
+    TabbedContent { background: transparent; }
+    TabbedContent > TabPane { background: transparent; padding: 0; }
+    ContentSwitcher { background: transparent; }
+
+    /* ── Stats bar (dashboard) ─────────────────────────── */
+    #stats-bar {
+        height: 1;
+        background: $panel;
+        padding: 0 1;
+        color: $text;
     }
-    DataTable { height: 1fr; }
+
+    /* ── Charts ────────────────────────────────────────── */
+    #charts-row { height: 1fr; }
+
+    /* ── Trades tab ────────────────────────────────────── */
+    #trade-status {
+        height: 1;
+        background: $panel;
+        padding: 0 1;
+        color: $text-muted;
+    }
+
+    DataTable {
+        height: 1fr;
+        background: transparent;
+    }
     """
 
     BINDINGS = [
-        ("r", "refresh_data", "Actualizar precio"),
-        ("a", "add_trade", "Agregar"),
-        ("d", "delete_trade", "Eliminar"),
-        ("q", "quit", "Salir"),
+        ("1",           "goto_dashboard",   "Dashboard"),
+        ("2",           "goto_trades",      "Trades"),
+        ("a",           "add_trade",        "Agregar"),
+        ("d",           "delete_trade",     "Eliminar"),
+        ("r",           "refresh_data",     "Actualizar"),
+        ("question_mark", "show_help",      "Ayuda"),
+        ("q",           "quit",             "Salir"),
     ]
 
     def __init__(self) -> None:
@@ -323,30 +357,22 @@ class BtcTuiApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with TabbedContent():
-            with TabPane("📊 Dashboard", id="tab-dashboard"):
-                with Horizontal(id="stats-row"):
-                    yield StatCard("P&L Neto", id="stat-pnl")
-                    yield StatCard("Fees Totales", id="stat-fees")
-                    yield StatCard("Win Rate", id="stat-winrate")
-                    yield StatCard("Mejor Trade", id="stat-best")
-                    yield StatCard("Peor Trade", id="stat-worst")
-                    yield StatCard("Spot Acumulado (USD)", id="stat-spot")
+            with TabPane("Dashboard", id="tab-dashboard"):
+                yield Static("", id="stats-bar")
                 with Horizontal(id="charts-row"):
                     yield PlotWidget("P&L Acumulado (sats)", id="chart-cumulative")
                     yield PlotWidget("P&L por Trade (sats)", id="chart-bars")
-            with TabPane("📋 Trades", id="tab-trades"):
-                with Horizontal(id="trades-controls"):
-                    yield Button("➕ Agregar [A]", id="btn-add", variant="primary")
-                    yield Button("🗑 Eliminar [D]", id="btn-delete", variant="error")
-                    yield Static("", id="info-label")
+            with TabPane("Trades", id="tab-trades"):
+                yield Static("", id="trade-status")
                 yield DataTable(id="trades-table", zebra_stripes=True, cursor_type="row")
         yield Footer()
 
     def on_mount(self) -> None:
+        self.title = "BTC Futures"
         table = self.query_one("#trades-table", DataTable)
         table.add_columns(
-            "ID", "Dir", "Estado", "P&L (sats)", "Fees (sats)",
-            "Margin (sats)", "Lev", "Entrada", "Liq.", "Creación", "Notas",
+            "ID", "Dir", "Estado", "P&L (sats)", "Fees",
+            "Margin", "Lev", "Entrada", "Liq.", "Fecha", "Notas",
         )
         self.action_refresh_data()
 
@@ -355,7 +381,6 @@ class BtcTuiApp(App):
     # ------------------------------------------------------------------
 
     def action_refresh_data(self) -> None:
-        self.notify("Actualizando precio BTC...", timeout=2)
         self._fetch()
 
     @work(thread=True)
@@ -366,53 +391,54 @@ class BtcTuiApp(App):
     def _update_ui(self, price: float) -> None:
         self._current_price = price
         self._trades = tr.load_trades()
-        self._refresh_stats()
+        s = tr.compute_stats(self._trades, price)
+        self.sub_title = (
+            f"BTC ${price:,.0f}"
+            f"  │  Spot {'+'if s['spot_usd']>=0 else ''}${s['spot_usd']:,.2f} USD"
+        )
+        self._refresh_stats_bar(s)
+        self._refresh_trade_status(s, price)
         self._refresh_table()
         self._refresh_charts()
 
-    def _refresh_stats(self) -> None:
-        s = tr.compute_stats(self._trades, self._current_price)
+    def _refresh_stats_bar(self, s: dict) -> None:
+        pnl_c  = "green" if s["net_pnl"] >= 0 else "red"
+        spot_c = "green" if s["spot_usd"] >= 0 else "red"
+        wr_c   = "green" if s["win_rate"] >= 50 else "red"
 
-        pnl_color = "green" if s["net_pnl"] >= 0 else "red"
-        self.query_one("#stat-pnl", StatCard).set_value(fmt_sats(s["net_pnl"]), pnl_color)
-
-        self.query_one("#stat-fees", StatCard).set_value(f"{s['total_fees']:,} sats", "yellow")
-
-        wr_color = "green" if s["win_rate"] >= 50 else "red"
-        self.query_one("#stat-winrate", StatCard).set_value(
-            f"{s['win_rate']:.1f}%  ({s['winners']}W / {s['losers']}L)", wr_color
+        self.query_one("#stats-bar", Static).update(
+            f"P&L [{pnl_c}]{fmt_sats(s['net_pnl'])} sats[/{pnl_c}]"
+            f"   Fees [yellow]{s['total_fees']:,}[/yellow]"
+            f"   Win [{wr_c}]{s['win_rate']:.0f}%[/{wr_c}]"
+            f" [dim]({s['winners']}W·{s['losers']}L)[/dim]"
+            f"   Mejor [green]{fmt_sats(s['best'])}[/green]"
+            f"   Peor [red]{fmt_sats(s['worst'])}[/red]"
+            f"   Spot [{spot_c}]${s['spot_usd']:,.2f} USD[/{spot_c}]"
         )
 
-        self.query_one("#stat-best", StatCard).set_value(fmt_sats(s["best"]), "green")
-        self.query_one("#stat-worst", StatCard).set_value(fmt_sats(s["worst"]), "red")
-
-        spot_color = "green" if s["spot_usd"] >= 0 else "red"
-        price_str = f"${self._current_price:,.0f}" if self._current_price else "offline"
-        self.query_one("#stat-spot", StatCard).set_value(f"${s['spot_usd']:,.2f}", spot_color)
-
-        self.query_one("#info-label", Static).update(
-            f"BTC: [cyan]{price_str}[/cyan]  "
-            f"Trades: [white]{s['filled']} filled[/white] / {s['canceled']} canceled"
+    def _refresh_trade_status(self, s: dict, price: float) -> None:
+        price_str = f"${price:,.0f}" if price else "offline"
+        self.query_one("#trade-status", Static).update(
+            f"BTC [cyan]{price_str}[/cyan]"
+            f"   [white]{s['filled']}[/white] filled"
+            f" · [dim]{s['canceled']} canceled[/dim]"
+            f"   [dim]↑↓ navegar  ·  A agregar  ·  D eliminar[/dim]"
         )
 
     def _refresh_table(self) -> None:
         table = self.query_one("#trades-table", DataTable)
         table.clear()
         for t in reversed(self._trades):
-            dir_markup = "[green]Long ↑[/green]" if t["direction"] == "Long" else "[red]Short ↓[/red]"
-            status_markup = {
-                "Filled":   "[green]Filled[/green]",
-                "Canceled": "[dim]Canceled[/dim]",
-                "Open":     "[yellow]Open[/yellow]",
-            }.get(t["status"], t["status"])
+            dir_m = "[green]Long ↑[/green]" if t["direction"] == "Long" else "[red]Short ↓[/red]"
+            st_m = {"Filled": "[green]Filled[/green]",
+                    "Canceled": "[dim]Canceled[/dim]",
+                    "Open": "[yellow]Open[/yellow]"}.get(t["status"], t["status"])
             pnl = t["pnl"]
-            pnl_markup = f"[{'green' if pnl >= 0 else 'red'}]{pnl:+,}[/{'green' if pnl >= 0 else 'red'}]"
+            pnl_c = "green" if pnl >= 0 else "red"
             fees = t["trading_fees"] + t["funding_cost"]
             table.add_row(
-                t["id"],
-                dir_markup,
-                status_markup,
-                pnl_markup,
+                t["id"], dir_m, st_m,
+                f"[{pnl_c}]{pnl:+,}[/{pnl_c}]",
                 f"{fees:,}",
                 f"{t['margin']:,}",
                 f"{t['leverage']:.1f}x",
@@ -427,27 +453,28 @@ class BtcTuiApp(App):
         timeline = tr.get_pnl_timeline(self._trades)
         if not timeline:
             return
-        dates = [p["date"] for p in timeline]
+        dates      = [p["date"] for p in timeline]
         cumulative = [p["cumulative"] for p in timeline]
-        per_trade = [p["pnl"] for p in timeline]
-
+        per_trade  = [p["pnl"] for p in timeline]
         self.query_one("#chart-cumulative", PlotWidget).update_line(dates, cumulative)
-        self.query_one("#chart-bars", PlotWidget).update_bars(dates, per_trade)
+        self.query_one("#chart-bars",       PlotWidget).update_bars(dates, per_trade)
 
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
 
+    def action_goto_dashboard(self) -> None:
+        self.query_one(TabbedContent).active = "tab-dashboard"
+
+    def action_goto_trades(self) -> None:
+        self.query_one(TabbedContent).active = "tab-trades"
+
     def action_add_trade(self) -> None:
         self.push_screen(AddTradeModal(), self._on_added)
 
-    @on(Button.Pressed, "#btn-add")
-    def on_btn_add(self) -> None:
-        self.action_add_trade()
-
     def _on_added(self, trade: dict | None) -> None:
         if trade:
-            self.notify(f"✅ Trade {trade['id']} guardado.", severity="information")
+            self.notify(f"Trade {trade['id']} guardado.", severity="information", timeout=3)
             self._update_ui(self._current_price)
 
     def action_delete_trade(self) -> None:
@@ -456,17 +483,15 @@ class BtcTuiApp(App):
             self.notify("No hay trades.", severity="warning")
             return
         try:
-            row = table.get_row_at(table.cursor_row)
-            trade_id = str(row[0])
+            trade_id = str(table.get_row_at(table.cursor_row)[0])
             tr.delete_trade(trade_id)
-            self.notify(f"🗑 Trade {trade_id} eliminado.", severity="warning")
+            self.notify(f"Trade {trade_id} eliminado.", severity="warning", timeout=3)
             self._update_ui(self._current_price)
         except Exception as e:
             self.notify(f"Error: {e}", severity="error")
 
-    @on(Button.Pressed, "#btn-delete")
-    def on_btn_delete(self) -> None:
-        self.action_delete_trade()
+    def action_show_help(self) -> None:
+        self.push_screen(HelpModal())
 
 
 if __name__ == "__main__":
