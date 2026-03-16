@@ -1,14 +1,14 @@
-"""BTC Portfolio TUI — visualiza tus trades y rendimientos a largo plazo."""
+"""BTC Futures TUI — P&L en sats, spot acumulado en USD."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import plotext as plt
 import requests
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -38,14 +38,18 @@ def fetch_btc_price() -> float:
         return 0.0
 
 
+def fmt_sats(n: int) -> str:
+    """Formatea sats con signo y separadores de miles."""
+    sign = "+" if n > 0 else ""
+    return f"{sign}{n:,} sats"
+
+
 # ---------------------------------------------------------------------------
 # Widgets
 # ---------------------------------------------------------------------------
 
 
 class PlotWidget(Static):
-    """Terminal chart powered by plotext."""
-
     DEFAULT_CSS = """
     PlotWidget {
         width: 1fr;
@@ -59,6 +63,7 @@ class PlotWidget(Static):
         self._title = title
         self._dates: list[str] = []
         self._values: list[float] = []
+        self._bar_mode = False
 
     def on_mount(self) -> None:
         self._redraw()
@@ -66,9 +71,16 @@ class PlotWidget(Static):
     def on_resize(self) -> None:
         self._redraw()
 
-    def update_data(self, dates: list[str], values: list[float]) -> None:
+    def update_line(self, dates: list[str], values: list[float]) -> None:
         self._dates = dates
         self._values = values
+        self._bar_mode = False
+        self._redraw()
+
+    def update_bars(self, dates: list[str], values: list[float]) -> None:
+        self._dates = dates
+        self._values = values
+        self._bar_mode = True
         self._redraw()
 
     def _redraw(self) -> None:
@@ -82,11 +94,15 @@ class PlotWidget(Static):
 
         if self._dates and self._values:
             x = list(range(len(self._dates)))
-            plt.plot(x, self._values, marker="braille")
+            if self._bar_mode:
+                colors = ["green" if v >= 0 else "red" for v in self._values]
+                plt.bar(x, self._values, color=colors)
+            else:
+                plt.plot(x, self._values, marker="braille")
+                plt.hline(0, "white")
+
             step = max(1, len(x) // 6)
-            tick_x = x[::step]
-            tick_labels = [self._dates[i][:7] for i in tick_x]
-            plt.xticks(tick_x, tick_labels)
+            plt.xticks(x[::step], [self._dates[i] for i in x[::step]])
         else:
             plt.text("Sin datos — agrega trades con [A]", x=1, y=1)
 
@@ -94,8 +110,6 @@ class PlotWidget(Static):
 
 
 class StatCard(Static):
-    """Tarjeta de métrica con label y valor."""
-
     DEFAULT_CSS = """
     StatCard {
         width: 1fr;
@@ -110,21 +124,15 @@ class StatCard(Static):
     def __init__(self, label: str, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._label = label
-        self._value = "—"
-        self._color = "white"
 
     def on_mount(self) -> None:
-        self._refresh()
+        self._draw("—", "white")
 
     def set_value(self, value: str, color: str = "white") -> None:
-        self._value = value
-        self._color = color
-        self._refresh()
+        self._draw(value, color)
 
-    def _refresh(self) -> None:
-        self.update(
-            f"[dim]{self._label}[/dim]\n[bold {self._color}]{self._value}[/bold {self._color}]"
-        )
+    def _draw(self, value: str, color: str) -> None:
+        self.update(f"[dim]{self._label}[/dim]\n[bold {color}]{value}[/bold {color}]")
 
 
 # ---------------------------------------------------------------------------
@@ -134,12 +142,10 @@ class StatCard(Static):
 
 class AddTradeModal(ModalScreen):
     DEFAULT_CSS = """
-    AddTradeModal {
-        align: center middle;
-    }
-    AddTradeModal > Vertical {
-        width: 62;
-        height: auto;
+    AddTradeModal { align: center middle; }
+    AddTradeModal > ScrollableContainer {
+        width: 66;
+        height: 90%;
         border: thick $accent;
         background: $surface;
         padding: 1 2;
@@ -157,57 +163,123 @@ class AddTradeModal(ModalScreen):
         margin-top: 1;
         height: auto;
     }
-    AddTradeModal Button {
-        width: 1fr;
-        margin: 0 1;
-    }
+    AddTradeModal Button { width: 1fr; margin: 0 1; }
     """
 
     def compose(self) -> ComposeResult:
-        today = date.today().isoformat()
-        with Vertical():
-            yield Label("[bold]➕ Agregar Trade[/bold]", id="modal-title")
-            yield Label("Tipo")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        with ScrollableContainer():
+            yield Label("[bold]Agregar Trade[/bold]", id="modal-title")
+
+            yield Label("Dirección")
+            yield Select([("Long ↑", "Long"), ("Short ↓", "Short")], id="f-direction", value="Long")
+
+            yield Label("Estado")
             yield Select(
-                [("🟢 Compra (BUY)", "buy"), ("🔴 Venta (SELL)", "sell")],
-                id="trade-type",
-                value="buy",
+                [("Filled ✅", "Filled"), ("Canceled ❌", "Canceled"), ("Open 🔄", "Open")],
+                id="f-status", value="Filled",
             )
-            yield Label("Fecha (YYYY-MM-DD)")
-            yield Input(value=today, id="trade-date", placeholder="2024-01-15")
-            yield Label("Cantidad BTC")
-            yield Input(id="trade-btc", placeholder="0.001")
-            yield Label("Precio USD/BTC en esa fecha")
-            yield Input(id="trade-price", placeholder="50000")
-            yield Label("Notas (opcional)")
-            yield Input(id="trade-notes", placeholder="Binance, DCA, etc.")
+
+            yield Label("P&L (sats)")
+            yield Input(id="f-pnl", placeholder="0  (negativo si fue pérdida)")
+
+            yield Label("Quantity (sats)")
+            yield Input(id="f-quantity", placeholder="2000")
+
+            yield Label("Trade Margin (sats)")
+            yield Input(id="f-trade-margin", placeholder="198117")
+
+            yield Label("Margin (sats)")
+            yield Input(id="f-margin", placeholder="204257")
+
+            yield Label("Leverage")
+            yield Input(id="f-leverage", placeholder="15.0")
+
+            yield Label("Precio entrada (USD)")
+            yield Input(id="f-price", placeholder="67300")
+
+            yield Label("Liquidación (USD)")
+            yield Input(id="f-liquidation", placeholder="63094")
+
+            yield Label("Stoploss (USD)")
+            yield Input(id="f-sl", placeholder="66627")
+
+            yield Label("Takeprofit (USD)")
+            yield Input(id="f-tp", placeholder="126000")
+
+            yield Label("Trading fees (sats)")
+            yield Input(id="f-fees", placeholder="0")
+
+            yield Label("Funding cost (sats)")
+            yield Input(id="f-funding", placeholder="0")
+
+            yield Label("Fecha creación (YYYY-MM-DD HH:MM)")
+            yield Input(value=now, id="f-created", placeholder="2026-02-08 20:41")
+
+            yield Label("Fecha filled (dejar vacío si no aplica)")
+            yield Input(id="f-filled", placeholder="2026-02-08 22:10")
+
+            yield Label("ID externo (opcional)")
+            yield Input(id="f-id", placeholder="e0ad7f33-c690...")
+
+            yield Label("Notas")
+            yield Input(id="f-notes", placeholder="Estrategia, contexto...")
+
             with Horizontal():
                 yield Button("Guardar", id="btn-save", variant="primary")
-                yield Button("Cancelar", id="btn-cancel", variant="default")
+                yield Button("Cancelar", id="btn-cancel")
+
+    def _get(self, id_: str, default: str = "") -> str:
+        return self.query_one(id_, Input).value.strip() or default
+
+    def _int(self, id_: str) -> int:
+        try:
+            return int(self._get(id_, "0"))
+        except ValueError:
+            return 0
+
+    def _float(self, id_: str) -> float:
+        try:
+            return float(self._get(id_, "0"))
+        except ValueError:
+            return 0.0
 
     @on(Button.Pressed, "#btn-save")
     def save(self) -> None:
-        trade_type = self.query_one("#trade-type", Select).value
-        trade_date = self.query_one("#trade-date", Input).value.strip()
-        btc_str = self.query_one("#trade-btc", Input).value.strip()
-        price_str = self.query_one("#trade-price", Input).value.strip()
-        notes = self.query_one("#trade-notes", Input).value.strip()
+        direction = self.query_one("#f-direction", Select).value
+        status = self.query_one("#f-status", Select).value
+        created = self._get("#f-created")
+
+        if direction is Select.BLANK or status is Select.BLANK or not created:
+            self.notify("Dirección, estado y fecha son obligatorios.", severity="error")
+            return
 
         try:
-            datetime.strptime(trade_date, "%Y-%m-%d")
-            btc_amount = float(btc_str)
-            price_usd = float(price_str)
-            if btc_amount <= 0 or price_usd <= 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            self.notify("⚠ Revisa los datos: fecha, BTC y precio deben ser válidos.", severity="error")
+            datetime.strptime(created, "%Y-%m-%d %H:%M")
+        except ValueError:
+            self.notify("Fecha inválida. Formato: YYYY-MM-DD HH:MM", severity="error")
             return
 
-        if trade_type is Select.BLANK:
-            self.notify("⚠ Selecciona el tipo de operación.", severity="error")
-            return
-
-        trade = tr.add_trade(trade_type, trade_date, btc_amount, price_usd, notes)
+        fields = {
+            "id": self._get("#f-id"),
+            "direction": direction,
+            "status": status,
+            "pnl": self._int("#f-pnl"),
+            "quantity": self._int("#f-quantity"),
+            "trade_margin": self._int("#f-trade-margin"),
+            "margin": self._int("#f-margin"),
+            "leverage": self._float("#f-leverage"),
+            "price": self._float("#f-price"),
+            "liquidation": self._float("#f-liquidation"),
+            "stoploss": self._float("#f-sl"),
+            "takeprofit": self._float("#f-tp"),
+            "trading_fees": self._int("#f-fees"),
+            "funding_cost": self._int("#f-funding"),
+            "creation_date": created,
+            "filled_date": self._get("#f-filled"),
+            "notes": self._get("#f-notes"),
+        }
+        trade = tr.add_trade(fields)
         self.dismiss(trade)
 
     @on(Button.Pressed, "#btn-cancel")
@@ -223,21 +295,10 @@ class AddTradeModal(ModalScreen):
 class BtcTuiApp(App):
     CSS = """
     Screen { background: $background; }
-
-    #stats-row {
-        height: 5;
-        margin: 0 0 1 0;
-    }
-    #charts-row {
-        height: 1fr;
-    }
-    #trades-controls {
-        height: 3;
-        margin-bottom: 1;
-    }
-    #trades-controls Button {
-        margin-right: 1;
-    }
+    #stats-row  { height: 5; margin: 0 0 1 0; }
+    #charts-row { height: 1fr; }
+    #trades-controls { height: 3; margin-bottom: 1; }
+    #trades-controls Button { margin-right: 1; }
     #info-label {
         width: 1fr;
         content-align: right middle;
@@ -264,38 +325,41 @@ class BtcTuiApp(App):
         with TabbedContent():
             with TabPane("📊 Dashboard", id="tab-dashboard"):
                 with Horizontal(id="stats-row"):
-                    yield StatCard("BTC Balance", id="stat-btc")
-                    yield StatCard("Total Invertido", id="stat-invested")
-                    yield StatCard("Valor Actual", id="stat-value")
-                    yield StatCard("P&L", id="stat-pnl")
-                    yield StatCard("ROI", id="stat-roi")
-                    yield StatCard("Precio BTC", id="stat-price")
+                    yield StatCard("P&L Neto", id="stat-pnl")
+                    yield StatCard("Fees Totales", id="stat-fees")
+                    yield StatCard("Win Rate", id="stat-winrate")
+                    yield StatCard("Mejor Trade", id="stat-best")
+                    yield StatCard("Peor Trade", id="stat-worst")
+                    yield StatCard("Spot Acumulado (USD)", id="stat-spot")
                 with Horizontal(id="charts-row"):
-                    yield PlotWidget("₿ BTC Acumulado", id="chart-btc")
-                    yield PlotWidget("💵 USD Neto Invertido", id="chart-invested")
+                    yield PlotWidget("P&L Acumulado (sats)", id="chart-cumulative")
+                    yield PlotWidget("P&L por Trade (sats)", id="chart-bars")
             with TabPane("📋 Trades", id="tab-trades"):
                 with Horizontal(id="trades-controls"):
                     yield Button("➕ Agregar [A]", id="btn-add", variant="primary")
                     yield Button("🗑 Eliminar [D]", id="btn-delete", variant="error")
-                    yield Static("Cargando precio...", id="info-label")
+                    yield Static("", id="info-label")
                 yield DataTable(id="trades-table", zebra_stripes=True, cursor_type="row")
         yield Footer()
 
     def on_mount(self) -> None:
         table = self.query_one("#trades-table", DataTable)
-        table.add_columns("ID", "Tipo", "Fecha", "BTC", "Precio USD", "Total USD", "Notas")
+        table.add_columns(
+            "ID", "Dir", "Estado", "P&L (sats)", "Fees (sats)",
+            "Margin (sats)", "Lev", "Entrada", "Liq.", "Creación", "Notas",
+        )
         self.action_refresh_data()
 
     # ------------------------------------------------------------------
-    # Data refresh
+    # Refresh
     # ------------------------------------------------------------------
 
     def action_refresh_data(self) -> None:
         self.notify("Actualizando precio BTC...", timeout=2)
-        self._fetch_and_update()
+        self._fetch()
 
     @work(thread=True)
-    def _fetch_and_update(self) -> None:
+    def _fetch(self) -> None:
         price = fetch_btc_price()
         self.call_from_thread(self._update_ui, price)
 
@@ -309,64 +373,79 @@ class BtcTuiApp(App):
     def _refresh_stats(self) -> None:
         s = tr.compute_stats(self._trades, self._current_price)
 
-        self.query_one("#stat-btc", StatCard).set_value(f"₿ {s['btc']:.6f}", "yellow")
-        self.query_one("#stat-invested", StatCard).set_value(f"${s['invested']:,.2f}", "white")
+        pnl_color = "green" if s["net_pnl"] >= 0 else "red"
+        self.query_one("#stat-pnl", StatCard).set_value(fmt_sats(s["net_pnl"]), pnl_color)
 
-        val_color = "green" if s["current_val"] >= s["net_cost"] else "red"
-        self.query_one("#stat-value", StatCard).set_value(f"${s['current_val']:,.2f}", val_color)
+        self.query_one("#stat-fees", StatCard).set_value(f"{s['total_fees']:,} sats", "yellow")
 
-        pnl_sign = "+" if s["pnl"] >= 0 else ""
-        pnl_color = "green" if s["pnl"] >= 0 else "red"
-        self.query_one("#stat-pnl", StatCard).set_value(f"{pnl_sign}${s['pnl']:,.2f}", pnl_color)
+        wr_color = "green" if s["win_rate"] >= 50 else "red"
+        self.query_one("#stat-winrate", StatCard).set_value(
+            f"{s['win_rate']:.1f}%  ({s['winners']}W / {s['losers']}L)", wr_color
+        )
 
-        roi_sign = "+" if s["roi"] >= 0 else ""
-        roi_color = "green" if s["roi"] >= 0 else "red"
-        self.query_one("#stat-roi", StatCard).set_value(f"{roi_sign}{s['roi']:.1f}%", roi_color)
+        self.query_one("#stat-best", StatCard).set_value(fmt_sats(s["best"]), "green")
+        self.query_one("#stat-worst", StatCard).set_value(fmt_sats(s["worst"]), "red")
 
-        price_str = f"${self._current_price:,.2f}" if self._current_price else "N/A (offline)"
-        self.query_one("#stat-price", StatCard).set_value(price_str, "cyan")
+        spot_color = "green" if s["spot_usd"] >= 0 else "red"
+        price_str = f"${self._current_price:,.0f}" if self._current_price else "offline"
+        self.query_one("#stat-spot", StatCard).set_value(f"${s['spot_usd']:,.2f}", spot_color)
 
-        avg = f"${s['avg_price']:,.2f}" if s["avg_price"] else "N/A"
         self.query_one("#info-label", Static).update(
-            f"BTC: [cyan]{price_str}[/cyan]  Precio promedio compra: [yellow]{avg}[/yellow]"
+            f"BTC: [cyan]{price_str}[/cyan]  "
+            f"Trades: [white]{s['filled']} filled[/white] / {s['canceled']} canceled"
         )
 
     def _refresh_table(self) -> None:
         table = self.query_one("#trades-table", DataTable)
         table.clear()
         for t in reversed(self._trades):
-            tipo = "[green]BUY[/green]" if t["type"] == "buy" else "[red]SELL[/red]"
+            dir_markup = "[green]Long ↑[/green]" if t["direction"] == "Long" else "[red]Short ↓[/red]"
+            status_markup = {
+                "Filled":   "[green]Filled[/green]",
+                "Canceled": "[dim]Canceled[/dim]",
+                "Open":     "[yellow]Open[/yellow]",
+            }.get(t["status"], t["status"])
+            pnl = t["pnl"]
+            pnl_markup = f"[{'green' if pnl >= 0 else 'red'}]{pnl:+,}[/{'green' if pnl >= 0 else 'red'}]"
+            fees = t["trading_fees"] + t["funding_cost"]
             table.add_row(
                 t["id"],
-                tipo,
-                t["date"],
-                f"₿ {t['btc_amount']:.6f}",
-                f"${t['price_usd']:,.2f}",
-                f"${t['total_usd']:,.2f}",
+                dir_markup,
+                status_markup,
+                pnl_markup,
+                f"{fees:,}",
+                f"{t['margin']:,}",
+                f"{t['leverage']:.1f}x",
+                f"${t['price']:,.0f}",
+                f"${t['liquidation']:,.0f}",
+                t["creation_date"][:10],
                 t.get("notes", ""),
                 key=t["id"],
             )
 
     def _refresh_charts(self) -> None:
-        timeline = tr.get_timeline(self._trades)
+        timeline = tr.get_pnl_timeline(self._trades)
         if not timeline:
             return
         dates = [p["date"] for p in timeline]
-        self.query_one("#chart-btc", PlotWidget).update_data(dates, [p["btc"] for p in timeline])
-        self.query_one("#chart-invested", PlotWidget).update_data(dates, [p["invested"] for p in timeline])
+        cumulative = [p["cumulative"] for p in timeline]
+        per_trade = [p["pnl"] for p in timeline]
+
+        self.query_one("#chart-cumulative", PlotWidget).update_line(dates, cumulative)
+        self.query_one("#chart-bars", PlotWidget).update_bars(dates, per_trade)
 
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
 
     def action_add_trade(self) -> None:
-        self.push_screen(AddTradeModal(), self._on_trade_added)
+        self.push_screen(AddTradeModal(), self._on_added)
 
     @on(Button.Pressed, "#btn-add")
     def on_btn_add(self) -> None:
         self.action_add_trade()
 
-    def _on_trade_added(self, trade: dict | None) -> None:
+    def _on_added(self, trade: dict | None) -> None:
         if trade:
             self.notify(f"✅ Trade {trade['id']} guardado.", severity="information")
             self._update_ui(self._current_price)
@@ -374,7 +453,7 @@ class BtcTuiApp(App):
     def action_delete_trade(self) -> None:
         table = self.query_one("#trades-table", DataTable)
         if table.row_count == 0:
-            self.notify("No hay trades para eliminar.", severity="warning")
+            self.notify("No hay trades.", severity="warning")
             return
         try:
             row = table.get_row_at(table.cursor_row)
