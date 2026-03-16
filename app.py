@@ -27,8 +27,9 @@ def fetch_btc_price() -> float:
 
 class BtcTuiApp(App):
     CSS = """
-    Screen { background: $background; }
-    TabbedContent, TabbedContent > TabPane, ContentSwitcher { background: transparent; }
+    Screen { background: transparent; }
+    TabbedContent, ContentSwitcher, TabPane,
+    Tabs, Tab, Horizontal, Vertical { background: transparent; }
     TabbedContent > TabPane { padding: 0; }
 
     #stats-bar, #trade-status, #spot-status {
@@ -82,7 +83,7 @@ class BtcTuiApp(App):
         self.title = "BTC Futures"
         self.query_one("#trades-table", DataTable).add_columns(
             "ID", "Dir", "Estado", "P&L (sats)", "Fees",
-            "Margin", "Lev", "Entrada", "Liq.", "Fecha", "Notas",
+            "Margin", "Lev", "Entrada", "Cierre", "Fecha", "Notas",
         )
         self.query_one("#spot-table", DataTable).add_columns(
             "ID", "Fecha", "Sats", "Notas",
@@ -131,8 +132,7 @@ class BtcTuiApp(App):
             f" [dim]({s['winners']}W·{s['losers']}L)[/dim]"
             f"   Mejor [green]{fmt_sats(s['best'])}[/green]"
             f"   Peor [red]{fmt_sats(s['worst'])}[/red]"
-            f"   Spot manual [cyan]{s['spot_manual']:+,} sats[/cyan]"
-            f"   Total spot [{spot_c}]${s['spot_usd']:,.2f} USD[/{spot_c}]"
+            f"   Spot [{spot_c}]{s['total_spot_sats']:+,} sats  ${s['spot_usd']:,.2f} USD[/{spot_c}]"
         )
 
     def _draw_trade_status(self, s: dict, price: float) -> None:
@@ -144,9 +144,9 @@ class BtcTuiApp(App):
         )
 
     def _draw_spot_status(self, s: dict) -> None:
-        c = "green" if s["spot_manual"] >= 0 else "red"
+        c = "green" if s["total_spot_sats"] >= 0 else "red"
         self.query_one("#spot-status", Static).update(
-            f"Total [{c}]{s['spot_manual']:+,} sats[/{c}]"
+            f"Total [{c}]{s['total_spot_sats']:+,} sats[/{c}]"
             f"   [dim]{len(self._spot)} entradas  ·  S agregar  ·  D eliminar[/dim]"
         )
 
@@ -171,7 +171,9 @@ class BtcTuiApp(App):
                 f"{t['margin']:,}",
                 f"{t['leverage']:.1f}x",
                 f"${t['price']:,.0f}",
-                f"${t['liquidation']:,.0f}",
+                {"none": "—", "liquidation": "[red]Liq 💀[/red]",
+                 "stoploss": "[yellow]SL 🛑[/yellow]",
+                 "takeprofit": "[green]TP ✅[/green]"}.get(t.get("close_event", "none"), "—"),
                 t["creation_date"][:10],
                 t.get("notes", ""),
                 key=t["id"],
@@ -206,6 +208,11 @@ class BtcTuiApp(App):
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        if len(self.screen_stack) > 1:  # modal activa
+            return False
+        return True
 
     def action_goto_dashboard(self) -> None:
         self.query_one(TabbedContent).active = "tab-dashboard"

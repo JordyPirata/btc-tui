@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from textual.app import ComposeResult
-from textual.containers import ScrollableContainer, Vertical
+from textual.containers import ScrollableContainer, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, Select, Static
 
@@ -63,10 +63,10 @@ class AddTradeModal(ModalScreen):
         background: $surface 60%;
         padding: 0;
     }
-    AddTradeModal #hint      { background: $panel 60%; padding: 0 2; height: 1; color: $text-muted; }
-    AddTradeModal #title     { text-align: center; margin: 1 0; color: $text; }
-    AddTradeModal Label      { margin-top: 1; color: $text-muted; }
-    AddTradeModal ScrollableContainer { padding: 0 2 1 2; background: transparent; }
+    AddTradeModal #hint  { background: $panel 60%; padding: 0 2; height: 1; color: $text-muted; }
+    AddTradeModal #title { text-align: center; margin: 1 0; color: $text; }
+    AddTradeModal Label  { margin-top: 1; color: $text-muted; }
+    AddTradeModal VerticalScroll { padding: 0 2 1 2; background: transparent; height: 1fr; }
     """
     BINDINGS = [
         ("ctrl+s", "save",   "Guardar"),
@@ -77,7 +77,7 @@ class AddTradeModal(ModalScreen):
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         with Vertical():
             yield Static(_HINT, id="hint")
-            with ScrollableContainer():
+            with VerticalScroll():
                 yield Label("[bold]Nuevo Trade[/bold]", id="title")
                 yield Label("Dirección")
                 yield Select([("Long ↑", "Long"), ("Short ↓", "Short")],
@@ -87,22 +87,21 @@ class AddTradeModal(ModalScreen):
                               ("Open 🔄", "Open")], id="f-status", value="Filled")
                 yield Label("P&L (sats — negativo si fue pérdida)")
                 yield Input(id="f-pnl",          placeholder="0")
-                yield Label("Quantity (sats)")
-                yield Input(id="f-quantity",     placeholder="2000")
-                yield Label("Trade Margin (sats)")
-                yield Input(id="f-trade-margin", placeholder="198117")
+                yield Label("Quantity (USD — valor del contrato)")
+                yield Input(id="f-quantity",     placeholder="500.00")
                 yield Label("Margin (sats)")
                 yield Input(id="f-margin",       placeholder="204257")
                 yield Label("Leverage")
                 yield Input(id="f-leverage",     placeholder="15.0")
                 yield Label("Precio entrada (USD)")
                 yield Input(id="f-price",        placeholder="67300")
-                yield Label("Liquidación (USD)")
-                yield Input(id="f-liquidation",  placeholder="63094")
-                yield Label("Stoploss (USD)")
-                yield Input(id="f-sl",           placeholder="66627")
-                yield Label("Takeprofit (USD)")
-                yield Input(id="f-tp",           placeholder="126000")
+                yield Label("Evento de cierre")
+                yield Select(
+                    [("— Ninguno / Manual", "none"),
+                     ("Liquidación 💀",     "liquidation"),
+                     ("Stop Loss 🛑",       "stoploss"),
+                     ("Take Profit ✅",     "takeprofit")],
+                    id="f-close-event", value="none")
                 yield Label("Trading fees (sats)")
                 yield Input(id="f-fees",         placeholder="0")
                 yield Label("Funding cost (sats)")
@@ -146,14 +145,11 @@ class AddTradeModal(ModalScreen):
             "direction":     direction,
             "status":        status,
             "pnl":           self._int("#f-pnl"),
-            "quantity":      self._int("#f-quantity"),
-            "trade_margin":  self._int("#f-trade-margin"),
+            "quantity":      self._float("#f-quantity"),
             "margin":        self._int("#f-margin"),
             "leverage":      self._float("#f-leverage"),
             "price":         self._float("#f-price"),
-            "liquidation":   self._float("#f-liquidation"),
-            "stoploss":      self._float("#f-sl"),
-            "takeprofit":    self._float("#f-tp"),
+            "close_event":   self.query_one("#f-close-event", Select).value or "none",
             "trading_fees":  self._int("#f-fees"),
             "funding_cost":  self._int("#f-funding"),
             "creation_date": created,
