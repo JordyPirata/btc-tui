@@ -9,6 +9,7 @@ from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, Ta
 
 import trades
 import stats as st
+import config as cfg
 from widgets import PlotWidget, fmt_sats
 from screens import AddSpotModal, AddTradeModal, HelpModal
 
@@ -49,6 +50,7 @@ class BtcTuiApp(App):
         ("s",             "add_spot",       "Add spot"),
         ("d",             "delete_row",     "Delete"),
         ("r",             "refresh_data",   "Refresh"),
+        ("t",             "cycle_theme",    "Theme"),
         ("question_mark", "show_help",      "Help"),
         ("q",             "quit",           "Quit"),
     ]
@@ -80,7 +82,9 @@ class BtcTuiApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "BTC Futures"
+        self._config = cfg.load_config()
+        self.theme   = self._config.get("theme", "textual-dark")
+        self.title   = "BTC Futures"
         self.query_one("#trades-table", DataTable).add_columns(
             "ID", "Dir", "Status", "Gross P&L", "Fees",
             "Margin", "Lev", "Entry", "Close", "Date", "Net P&L", "Notes",
@@ -270,6 +274,19 @@ class BtcTuiApp(App):
             self._update_ui(self._price)
         except Exception as e:
             self.notify(f"Error: {e}", severity="error")
+
+    # ------------------------------------------------------------------
+    # Theme
+    # ------------------------------------------------------------------
+
+    def action_cycle_theme(self) -> None:
+        themes = cfg.THEMES
+        current = self.theme
+        next_theme = themes[(themes.index(current) + 1) % len(themes)] if current in themes else themes[0]
+        self.theme = next_theme
+        self._config["theme"] = next_theme
+        cfg.save_config(self._config)
+        self.notify(f"Theme: {next_theme}", timeout=2)
 
     # ------------------------------------------------------------------
     # Help

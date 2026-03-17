@@ -20,6 +20,7 @@ HELP_TEXT = """\
   [bold]S[/bold]          Add spot entry
   [bold]D[/bold]          Delete selected row
   [bold]R[/bold]          Refresh BTC price
+  [bold]T[/bold]          Cycle theme
   [bold]?[/bold]          This help
   [bold]Q[/bold]          Quit
 
