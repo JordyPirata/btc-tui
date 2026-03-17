@@ -82,8 +82,8 @@ class BtcTuiApp(App):
     def on_mount(self) -> None:
         self.title = "BTC Futures"
         self.query_one("#trades-table", DataTable).add_columns(
-            "ID", "Dir", "Estado", "P&L (sats)", "Fees",
-            "Margin", "Lev", "Entrada", "Cierre", "Fecha", "Notas",
+            "ID", "Dir", "Estado", "P&L bruto", "Fees",
+            "Margin", "Lev", "Entrada", "Cierre", "Fecha", "Net P&L", "Notas",
         )
         self.query_one("#spot-table", DataTable).add_columns(
             "ID", "Fecha", "Sats", "Notas",
@@ -158,8 +158,11 @@ class BtcTuiApp(App):
         table = self.query_one("#trades-table", DataTable)
         table.clear()
         for t in reversed(self._trades):
-            pnl   = t["pnl"]
-            pnl_c = "green" if pnl >= 0 else "red"
+            pnl     = t["pnl"]
+            fees    = t["trading_fees"] + t["funding_cost"]
+            net_pnl = pnl - fees
+            pnl_c   = "green" if pnl     >= 0 else "red"
+            net_c   = "green" if net_pnl >= 0 else "red"
             table.add_row(
                 t["id"],
                 "[green]Long ↑[/green]" if t["direction"] == "Long" else "[red]Short ↓[/red]",
@@ -167,7 +170,7 @@ class BtcTuiApp(App):
                  "Canceled": "[dim]Canceled[/dim]",
                  "Open": "[yellow]Open[/yellow]"}.get(t["status"], t["status"]),
                 f"[{pnl_c}]{pnl:+,}[/{pnl_c}]",
-                f"{t['trading_fees'] + t['funding_cost']:,}",
+                f"{fees:,}",
                 f"{t['margin']:,}",
                 f"{t['leverage']:.1f}x",
                 f"${t['price']:,.0f}",
@@ -175,6 +178,7 @@ class BtcTuiApp(App):
                  "stoploss": "[yellow]SL 🛑[/yellow]",
                  "takeprofit": "[green]TP ✅[/green]"}.get(t.get("close_event", "none"), "—"),
                 t["creation_date"][:10],
+                f"[{net_c}]{net_pnl:+,}[/{net_c}]",
                 t.get("notes", ""),
                 key=t["id"],
             )

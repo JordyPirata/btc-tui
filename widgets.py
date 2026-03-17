@@ -42,7 +42,7 @@ class PlotWidget(Static):
         self._redraw()
 
     def _redraw(self) -> None:
-        w = max(self.size.width - 2, 10)
+        w = max(self.size.width - 2, 30)
         h = max(self.size.height - 2, 5)
 
         plt.clf()
@@ -53,8 +53,8 @@ class PlotWidget(Static):
         if self._dates and self._values:
             x = list(range(len(self._dates)))
             if self._bar_mode:
-                plt.bar(x, self._values,
-                        color=["green" if v >= 0 else "red" for v in self._values])
+                plt.bar(x, [max(v, 0) for v in self._values], color="green")
+                plt.bar(x, [min(v, 0) for v in self._values], color="red")
             else:
                 plt.plot(x, self._values, marker="braille")
                 plt.hline(0, "white")
@@ -63,4 +63,7 @@ class PlotWidget(Static):
         else:
             plt.text("Sin datos  —  [A] para agregar tu primer trade", x=1, y=1)
 
-        self.update(Text.from_ansi(plt.build()))
+        try:
+            self.update(Text.from_ansi(plt.build()))
+        except (ValueError, IndexError):
+            self.update("")
