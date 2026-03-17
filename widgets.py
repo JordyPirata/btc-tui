@@ -1,4 +1,4 @@
-"""Widgets reutilizables de la TUI."""
+"""Reusable TUI widgets."""
 from __future__ import annotations
 
 import plotext as plt
@@ -12,7 +12,7 @@ def fmt_sats(n: int) -> str:
 
 
 class PlotWidget(Static):
-    """Gráfica de terminal usando plotext, actualizable con línea o barras."""
+    """Terminal chart using plotext, updatable with line or bar mode."""
 
     DEFAULT_CSS = """
     PlotWidget {
@@ -61,7 +61,7 @@ class PlotWidget(Static):
             step = max(1, len(x) // 6)
             plt.xticks(x[::step], [self._dates[i] for i in x[::step]])
         else:
-            plt.text("Sin datos  —  [A] para agregar tu primer trade", x=1, y=1)
+            plt.text("No data  —  press [A] to add your first trade", x=1, y=1)
 
         try:
             self.update(Text.from_ansi(plt.build()))

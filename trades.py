@@ -1,4 +1,4 @@
-"""Persistencia y CRUD — trades de futuros y entradas spot."""
+"""Persistence and CRUD — futures trades and spot entries."""
 from __future__ import annotations
 
 import json

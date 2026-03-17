@@ -1,4 +1,4 @@
-"""Cálculos puros sobre trades y spot — sin I/O."""
+"""Pure computations on trades and spot — no I/O."""
 from __future__ import annotations
 
 SATS = 100_000_000
@@ -37,7 +37,7 @@ def compute_stats(trades: list[dict], spot: list[dict], btc_price_usd: float) ->
 
 
 def pnl_timeline(trades: list[dict]) -> list[dict]:
-    """Puntos acumulados de P&L neto para las gráficas (solo Filled)."""
+    """Cumulative net P&L data points for charts (Filled trades only)."""
     cumulative = 0
     points = []
     for t in (t for t in trades if t["status"] == "Filled"):

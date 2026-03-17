@@ -1,4 +1,4 @@
-"""Pantallas modales: ayuda, formulario de trade y formulario de spot."""
+"""Modal screens: help, trade form, and spot entry form."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,29 +11,29 @@ from textual.widgets import Input, Label, Select, Static
 import trades
 
 HELP_TEXT = """\
-[bold cyan]Atajos de teclado[/bold cyan]
+[bold cyan]Keyboard shortcuts[/bold cyan]
 
   [bold]1[/bold]          Dashboard
   [bold]2[/bold]          Trades
   [bold]3[/bold]          Spot
-  [bold]A[/bold]          Agregar trade
-  [bold]S[/bold]          Agregar entrada spot
-  [bold]D[/bold]          Eliminar fila seleccionada
-  [bold]R[/bold]          Actualizar precio BTC
-  [bold]?[/bold]          Esta ayuda
-  [bold]Q[/bold]          Salir
+  [bold]A[/bold]          Add trade
+  [bold]S[/bold]          Add spot entry
+  [bold]D[/bold]          Delete selected row
+  [bold]R[/bold]          Refresh BTC price
+  [bold]?[/bold]          This help
+  [bold]Q[/bold]          Quit
 
-[dim]— Formularios —[/dim]
-  [bold]Ctrl+S[/bold]     Guardar
-  [bold]Escape[/bold]     Cancelar / cerrar
+[dim]— Forms —[/dim]
+  [bold]Ctrl+S[/bold]     Save
+  [bold]Escape[/bold]     Cancel / close
 
-[dim]— Tabla —[/dim]
-  [bold]↑ ↓[/bold]        Navegar filas
-  [bold]PgUp PgDn[/bold]  Saltar páginas
+[dim]— Table —[/dim]
+  [bold]↑ ↓[/bold]        Navigate rows
+  [bold]PgUp PgDn[/bold]  Jump pages
 
-[dim]Presiona Escape para cerrar[/dim]"""
+[dim]Press Escape to close[/dim]"""
 
-_HINT = "[dim]  Ctrl+S[/dim] [white]guardar[/white]   [dim]Esc[/dim] [white]cancelar[/white]"
+_HINT = "[dim]  Ctrl+S[/dim] [white]save[/white]   [dim]Esc[/dim] [white]cancel[/white]"
 
 
 class HelpModal(ModalScreen):
@@ -47,7 +47,7 @@ class HelpModal(ModalScreen):
         padding: 1 2;
     }
     """
-    BINDINGS = [("escape", "dismiss", "Cerrar"), ("question_mark", "dismiss", "Cerrar")]
+    BINDINGS = [("escape", "dismiss", "Close"), ("question_mark", "dismiss", "Close")]
 
     def compose(self) -> ComposeResult:
         yield Static(HELP_TEXT)
@@ -69,8 +69,8 @@ class AddTradeModal(ModalScreen):
     AddTradeModal VerticalScroll { padding: 0 2 1 2; background: transparent; height: 1fr; }
     """
     BINDINGS = [
-        ("ctrl+s", "save",   "Guardar"),
-        ("escape", "cancel", "Cancelar"),
+        ("ctrl+s", "save",   "Save"),
+        ("escape", "cancel", "Cancel"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -78,42 +78,42 @@ class AddTradeModal(ModalScreen):
         with Vertical():
             yield Static(_HINT, id="hint")
             with VerticalScroll():
-                yield Label("[bold]Nuevo Trade[/bold]", id="title")
-                yield Label("Dirección")
+                yield Label("[bold]New Trade[/bold]", id="title")
+                yield Label("Direction")
                 yield Select([("Long ↑", "Long"), ("Short ↓", "Short")],
                              id="f-direction", value="Long")
-                yield Label("Estado")
+                yield Label("Status")
                 yield Select([("Filled ✅", "Filled"), ("Canceled ❌", "Canceled"),
                               ("Open 🔄", "Open")], id="f-status", value="Filled")
-                yield Label("P&L (sats — negativo si fue pérdida)")
+                yield Label("P&L (sats — negative if loss)")
                 yield Input(id="f-pnl",          placeholder="0")
-                yield Label("Quantity (USD — valor del contrato)")
+                yield Label("Quantity (USD — contract value)")
                 yield Input(id="f-quantity",     placeholder="500.00")
                 yield Label("Margin (sats)")
                 yield Input(id="f-margin",       placeholder="204257")
                 yield Label("Leverage")
                 yield Input(id="f-leverage",     placeholder="15.0")
-                yield Label("Precio entrada (USD)")
+                yield Label("Entry price (USD)")
                 yield Input(id="f-price",        placeholder="67300")
-                yield Label("Evento de cierre")
+                yield Label("Close event")
                 yield Select(
-                    [("— Ninguno / Manual", "none"),
-                     ("Liquidación 💀",     "liquidation"),
-                     ("Stop Loss 🛑",       "stoploss"),
-                     ("Take Profit ✅",     "takeprofit")],
+                    [("— None / Manual",  "none"),
+                     ("Liquidation 💀",   "liquidation"),
+                     ("Stop Loss 🛑",     "stoploss"),
+                     ("Take Profit ✅",   "takeprofit")],
                     id="f-close-event", value="none")
                 yield Label("Trading fees (sats)")
                 yield Input(id="f-fees",         placeholder="0")
                 yield Label("Funding cost (sats)")
                 yield Input(id="f-funding",      placeholder="0")
-                yield Label("Fecha creación (YYYY-MM-DD HH:MM)")
+                yield Label("Creation date (YYYY-MM-DD HH:MM)")
                 yield Input(value=now,            id="f-created")
-                yield Label("Fecha filled (vacío si no aplica)")
+                yield Label("Filled date (leave empty if not applicable)")
                 yield Input(id="f-filled",       placeholder="2026-02-08 22:10")
-                yield Label("ID externo (opcional)")
+                yield Label("External ID (optional)")
                 yield Input(id="f-id",           placeholder="e0ad7f33-c690...")
-                yield Label("Notas")
-                yield Input(id="f-notes",        placeholder="Estrategia, contexto...")
+                yield Label("Notes")
+                yield Input(id="f-notes",        placeholder="Strategy, context...")
 
     def _str(self, id_: str) -> str:
         return self.query_one(id_, Input).value.strip()
@@ -132,12 +132,12 @@ class AddTradeModal(ModalScreen):
         created   = self._str("#f-created")
 
         if direction is Select.BLANK or status is Select.BLANK or not created:
-            self.notify("Dirección, estado y fecha son obligatorios.", severity="error")
+            self.notify("Direction, status and date are required.", severity="error")
             return
         try:
             datetime.strptime(created, "%Y-%m-%d %H:%M")
         except ValueError:
-            self.notify("Fecha inválida. Formato: YYYY-MM-DD HH:MM", severity="error")
+            self.notify("Invalid date. Format: YYYY-MM-DD HH:MM", severity="error")
             return
 
         self.dismiss(trades.add_trade({
@@ -177,8 +177,8 @@ class AddSpotModal(ModalScreen):
     AddSpotModal ScrollableContainer { padding: 0 2 1 2; background: transparent; height: auto; }
     """
     BINDINGS = [
-        ("ctrl+s", "save",   "Guardar"),
-        ("escape", "cancel", "Cancelar"),
+        ("ctrl+s", "save",   "Save"),
+        ("escape", "cancel", "Cancel"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -186,13 +186,13 @@ class AddSpotModal(ModalScreen):
         with Vertical():
             yield Static(_HINT, id="hint")
             with ScrollableContainer():
-                yield Label("[bold]Agregar Spot[/bold]", id="title")
-                yield Label("Sats  [dim](+ ingreso / – retiro)[/dim]")
+                yield Label("[bold]Add Spot Entry[/bold]", id="title")
+                yield Label("Sats  [dim](+ deposit / – withdrawal)[/dim]")
                 yield Input(id="s-sats",  placeholder="100000")
-                yield Label("Fecha (YYYY-MM-DD)")
+                yield Label("Date (YYYY-MM-DD)")
                 yield Input(value=today,  id="s-date")
-                yield Label("Notas")
-                yield Input(id="s-notes", placeholder="Retiro de profits, compra OTC...")
+                yield Label("Notes")
+                yield Input(id="s-notes", placeholder="Profit withdrawal, OTC buy...")
 
     def action_save(self) -> None:
         sats_str = self.query_one("#s-sats",  Input).value.strip()
@@ -202,7 +202,7 @@ class AddSpotModal(ModalScreen):
             sats = int(sats_str)
             datetime.strptime(date_str, "%Y-%m-%d")
         except (ValueError, TypeError):
-            self.notify("Sats debe ser entero y fecha YYYY-MM-DD.", severity="error")
+            self.notify("Sats must be an integer and date must be YYYY-MM-DD.", severity="error")
             return
         self.dismiss(trades.add_spot_entry(date_str, sats, notes))
 
