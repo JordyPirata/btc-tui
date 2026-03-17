@@ -10,6 +10,15 @@ from textual.widgets import Input, Label, Select, Static
 
 import trades
 
+
+def calc_balance_delta(new_total: int, current_total: int) -> int:
+    return new_total - current_total
+
+
+def format_adjustment_notes(label: str, notes: str) -> str:
+    return f"[{label}] {notes}" if notes else label
+
+
 HELP_TEXT = """\
 [bold cyan]Keyboard shortcuts[/bold cyan]
 
@@ -18,6 +27,7 @@ HELP_TEXT = """\
   [bold]3[/bold]          Spot
   [bold]A[/bold]          Add trade
   [bold]S[/bold]          Add spot entry
+  [bold]E[/bold]          Adjust balance
   [bold]D[/bold]          Delete selected row
   [bold]R[/bold]          Refresh BTC price
   [bold]T[/bold]          Cycle theme
@@ -157,6 +167,106 @@ class AddTradeModal(ModalScreen):
             "filled_date":   self._str("#f-filled"),
             "notes":         self._str("#f-notes"),
         }))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class AdjustBalanceModal(ModalScreen):
+    DEFAULT_CSS = """
+    AdjustBalanceModal { align: center middle; }
+    AdjustBalanceModal > Vertical {
+        width: 56;
+        height: auto;
+        border: thick $accent 60%;
+        background: $surface 60%;
+        padding: 0;
+    }
+    AdjustBalanceModal #hint    { background: $panel 60%; padding: 0 2; height: 1; color: $text-muted; }
+    AdjustBalanceModal #title   { text-align: center; margin: 1 0; color: $text; }
+    AdjustBalanceModal #balance { text-align: center; margin-bottom: 1; }
+    AdjustBalanceModal #result  { text-align: center; margin-top: 1; }
+    AdjustBalanceModal Label    { margin-top: 1; color: $text-muted; }
+    AdjustBalanceModal ScrollableContainer { padding: 0 2 1 2; background: transparent; height: auto; }
+    """
+    BINDINGS = [
+        ("ctrl+s", "save",   "Save"),
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    TYPES = [
+        ("Routing fee",    "routing_fee",    -1),
+        ("Exchange fee",   "exchange_fee",   -1),
+        ("Expense",        "expense",        -1),
+        ("Transfer out",   "transfer_out",   -1),
+        ("Income",         "income",         +1),
+        ("Transfer in",    "transfer_in",    +1),
+        ("Correction +",   "correction_pos", +1),
+        ("Correction −",   "correction_neg", -1),
+    ]
+
+    def __init__(self, current_total: int) -> None:
+        super().__init__()
+        self._current_total = current_total
+        self._sign = -1
+
+    def compose(self) -> ComposeResult:
+        today = datetime.now().strftime("%Y-%m-%d")
+        with Vertical():
+            yield Static(_HINT, id="hint")
+            with ScrollableContainer():
+                yield Label("[bold]Adjust Balance[/bold]", id="title")
+                yield Label("New total (sats)")
+                yield Input(id="a-total", placeholder=str(self._current_total))
+                yield Label("Type")
+                yield Select(
+                    [(label, key) for label, key, _ in self.TYPES],
+                    id="a-type", value="routing_fee",
+                )
+                yield Label("Date (YYYY-MM-DD)")
+                yield Input(value=today, id="a-date")
+                yield Label("Notes")
+                yield Input(id="a-notes", placeholder="Justification...")
+                yield Static("", id="result")
+
+    def on_input_changed(self, _) -> None:
+        self._refresh_result()
+
+    def on_select_changed(self, _) -> None:
+        self._refresh_result()
+
+    def _refresh_result(self) -> None:
+        total_str = self.query_one("#a-total", Input).value.strip()
+        try:
+            new_total = int(total_str)
+            delta     = new_total - self._current_total
+            color     = "green" if delta >= 0 else "red"
+            self.query_one("#result", Static).update(
+                f"[dim]Current:[/dim] [cyan]{self._current_total:+,}[/cyan]  "
+                f"[dim]Transaction:[/dim] [{color}]{delta:+,} sats[/{color}]"
+            )
+        except (ValueError, TypeError):
+            self.query_one("#result", Static).update("")
+
+    def action_save(self) -> None:
+        total_str = self.query_one("#a-total", Input).value.strip()
+        type_key  = self.query_one("#a-type",  Select).value
+        date_str  = self.query_one("#a-date",  Input).value.strip()
+        notes     = self.query_one("#a-notes", Input).value.strip()
+        label     = next((l for l, k, _ in self.TYPES if k == type_key), type_key)
+
+        try:
+            delta = calc_balance_delta(int(total_str), self._current_total)
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            self.notify("Total must be an integer and date YYYY-MM-DD.", severity="error")
+            return
+
+        if delta == 0:
+            self.notify("No difference — total is already correct.", severity="warning")
+            return
+
+        self.dismiss(trades.add_spot_entry(date_str, delta, format_adjustment_notes(label, notes)))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

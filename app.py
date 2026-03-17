@@ -11,7 +11,7 @@ import trades
 import stats as st
 import config as cfg
 from widgets import PlotWidget, fmt_sats
-from screens import AddSpotModal, AddTradeModal, HelpModal
+from screens import AddSpotModal, AddTradeModal, AdjustBalanceModal, HelpModal
 
 BTC_PRICE_URL = (
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
@@ -48,6 +48,7 @@ class BtcTuiApp(App):
         ("3",             "goto_spot",      "Spot"),
         ("a",             "add_trade",      "Add trade"),
         ("s",             "add_spot",       "Add spot"),
+        ("e",             "adjust_balance", "Adjust"),
         ("d",             "delete_row",     "Delete"),
         ("r",             "refresh_data",   "Refresh"),
         ("t",             "cycle_theme",    "Theme"),
@@ -151,7 +152,7 @@ class BtcTuiApp(App):
         c = "green" if s["total_spot_sats"] >= 0 else "red"
         self.query_one("#spot-status", Static).update(
             f"Total [{c}]{s['total_spot_sats']:+,} sats[/{c}]"
-            f"   [dim]{len(self._spot)} entries  ·  S add  ·  D delete[/dim]"
+            f"   [dim]{len(self._spot)} entries  ·  S add  ·  E adjust  ·  D delete[/dim]"
         )
 
     # ------------------------------------------------------------------
@@ -250,6 +251,10 @@ class BtcTuiApp(App):
         if entry:
             self.notify(f"Spot {entry['id']}: {entry['sats']:+,} sats saved.", timeout=3)
             self._update_ui(self._price)
+
+    def action_adjust_balance(self) -> None:
+        current = st.calc_grand_total(self._spot, self._trades)
+        self.push_screen(AdjustBalanceModal(current), self._on_spot_added)
 
     # ------------------------------------------------------------------
     # Delete (context-aware based on active tab)
