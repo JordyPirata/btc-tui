@@ -1,0 +1,66 @@
+{
+  "trades": [
+    {
+      "id": "abc12345",
+      "direction": "Long",
+      "status": "Filled",
+      "pnl": 120000,
+      "quantity": 5000.0,
+      "margin": 100000,
+      "leverage": 50.0,
+      "price": 65000.0,
+      "close_event": "takeprofit",
+      "trading_fees": 8500,
+      "funding_cost": 200,
+      "creation_date": "2026-01-10 14:30",
+      "filled_date": "2026-01-11 09:00",
+      "notes": "Example long trade"
+    },
+    {
+      "id": "def67890",
+      "direction": "Short",
+      "status": "Filled",
+      "pnl": -45000,
+      "quantity": 3000.0,
+      "margin": 80000,
+      "leverage": 37.5,
+      "price": 70000.0,
+      "close_event": "stoploss",
+      "trading_fees": 6200,
+      "funding_cost": -300,
+      "creation_date": "2026-01-15 10:00",
+      "filled_date": "",
+      "notes": "Example short trade stopped out"
+    },
+    {
+      "id": "ghi11223",
+      "direction": "Long",
+      "status": "Open",
+      "pnl": 0,
+      "quantity": 2000.0,
+      "margin": 60000,
+      "leverage": 33.3,
+      "price": 68000.0,
+      "close_event": "none",
+      "trading_fees": 4100,
+      "funding_cost": 0,
+      "creation_date": "2026-02-01 08:15",
+      "filled_date": "",
+      "notes": "Example open position"
+    }
+  ],
+  "spot": [
+    {
+      "id": "spot0001",
+      "date": "2026-01-01",
+      "sats": 500000,
+      "notes": "Initial deposit"
+    },
+    {
+      "id": "spot0002",
+      "date": "2026-02-15",
+      "sats": -100000,
+      "notes": "Withdrawal"
+    }
+  ]
+}
