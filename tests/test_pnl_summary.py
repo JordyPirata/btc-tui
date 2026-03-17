@@ -11,7 +11,7 @@ def spot_entries():
         {"id": "cfe275f2", "date": "2026-03-16", "sats": 3_134_473, "notes": "Init"},
         {"id": "deae94cf", "date": "2026-03-16", "sats": 2_867_610, "notes": "Init"},
         {"id": "86676ef0", "date": "2026-03-16", "sats":   115_786, "notes": "Isolated"},
-        {"id": "3f4a5e35", "date": "2026-03-17", "sats":   -10_305, "notes": "Desayuno Café Adentro"},
+        {"id": "3f4a5e35", "date": "2026-03-17", "sats":   -10_305, "notes": "Breakfast"},
     ]
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def open_trade():
 
 # ── calc_spot_total ───────────────────────────────────────────────────────────
 
-def test_spot_total_suma_todas_las_entradas(spot_entries):
+def test_spot_total_sums_all_entries(spot_entries):
     # Arrange
     expected = 611_276 + 3_134_473 + 2_867_610 + 115_786 - 10_305
 
@@ -57,7 +57,7 @@ def test_spot_total_suma_todas_las_entradas(spot_entries):
     # Assert
     assert result == expected == 6_718_840
 
-def test_spot_total_con_lista_vacia():
+def test_spot_total_empty_list():
     # Arrange
     spot = []
 
@@ -67,7 +67,7 @@ def test_spot_total_con_lista_vacia():
     # Assert
     assert result == 0
 
-def test_spot_total_incluye_entradas_negativas():
+def test_spot_total_includes_negative_entries():
     # Arrange
     spot = [{"sats": 100_000}, {"sats": -5_000}]
 
@@ -77,7 +77,7 @@ def test_spot_total_incluye_entradas_negativas():
     # Assert
     assert result == 95_000
 
-def test_spot_total_entrada_unica():
+def test_spot_total_single_entry():
     # Arrange
     spot = [{"sats": 500_000}]
 
@@ -87,8 +87,8 @@ def test_spot_total_entrada_unica():
     # Assert
     assert result == 500_000
 
-def test_spot_total_todas_negativas():
-    # Arrange — balance neto negativo (más gastos que ingresos)
+def test_spot_total_all_negative():
+    # Arrange — net negative balance (more expenses than income)
     spot = [{"sats": -10_000}, {"sats": -5_000}]
 
     # Act
@@ -100,11 +100,11 @@ def test_spot_total_todas_negativas():
 
 # ── calc_net_pnl ──────────────────────────────────────────────────────────────
 
-def test_net_pnl_descuenta_fees_y_funding(filled_trades):
+def test_net_pnl_deducts_fees_and_funding(filled_trades):
     # Arrange
     gross   = -68_479 + 49_911 + 79_247 + 151_922   # 212_601
     fees    = 10_763 + 10_714 + 10_690 + 21_568       # 53_735
-    funding = -538                                     # negativo = recibido
+    funding = -538                                     # negative = received
     expected = gross - fees - funding                  # 159_404
 
     # Act
@@ -113,7 +113,7 @@ def test_net_pnl_descuenta_fees_y_funding(filled_trades):
     # Assert
     assert result == expected == 159_404
 
-def test_net_pnl_ignora_trades_no_filled(filled_trades, open_trade):
+def test_net_pnl_ignores_non_filled_trades(filled_trades, open_trade):
     # Arrange
     all_trades = filled_trades + open_trade
 
@@ -124,8 +124,8 @@ def test_net_pnl_ignora_trades_no_filled(filled_trades, open_trade):
     # Assert
     assert result_all == result_filled
 
-def test_net_pnl_funding_negativo_suma_al_pnl():
-    # Arrange — funding negativo en short = ingreso (te pagan)
+def test_net_pnl_negative_funding_adds_to_pnl():
+    # Arrange — negative funding on short = income (received payment)
     trades = [{"status": "Filled", "pnl": 10_000, "trading_fees": 500, "funding_cost": -200}]
 
     # Act
@@ -134,7 +134,7 @@ def test_net_pnl_funding_negativo_suma_al_pnl():
     # Assert
     assert result == 10_000 - 500 - (-200) == 9_700
 
-def test_net_pnl_lista_vacia():
+def test_net_pnl_empty_list():
     # Arrange
     trades = []
 
@@ -144,7 +144,7 @@ def test_net_pnl_lista_vacia():
     # Assert
     assert result == 0
 
-def test_net_pnl_solo_perdidas():
+def test_net_pnl_only_losses():
     # Arrange
     trades = [
         {"status": "Filled", "pnl": -50_000, "trading_fees": 5_000, "funding_cost": 0},
@@ -157,8 +157,8 @@ def test_net_pnl_solo_perdidas():
     # Assert
     assert result == -88_000
 
-def test_net_pnl_fees_mayores_que_gross():
-    # Arrange — ganas en P&L bruto pero las fees te dejan en negativo
+def test_net_pnl_fees_exceed_gross():
+    # Arrange — gross P&L is positive but fees push net negative
     trades = [{"status": "Filled", "pnl": 1_000, "trading_fees": 5_000, "funding_cost": 0}]
 
     # Act
@@ -168,7 +168,7 @@ def test_net_pnl_fees_mayores_que_gross():
     assert result == -4_000
 
 def test_net_pnl_breakeven():
-    # Arrange — trade con P&L exactamente 0
+    # Arrange — trade with exactly zero P&L
     trades = [{"status": "Filled", "pnl": 0, "trading_fees": 500, "funding_cost": 0}]
 
     # Act
@@ -178,7 +178,7 @@ def test_net_pnl_breakeven():
     assert result == -500
 
 @pytest.mark.parametrize("status", ["Open", "Cancelled", "Liquidated", "Pending"])
-def test_net_pnl_ignora_status_no_filled(status):
+def test_net_pnl_ignores_non_filled_status(status):
     # Arrange
     trades = [{"status": status, "pnl": 100_000, "trading_fees": 1_000, "funding_cost": 0}]
 
@@ -191,11 +191,11 @@ def test_net_pnl_ignora_status_no_filled(status):
 
 # ── calc_grand_total ──────────────────────────────────────────────────────────
 
-def test_grand_total_es_spot_mas_net_pnl(spot_entries, filled_trades):
+def test_grand_total_is_spot_plus_net_pnl(spot_entries, filled_trades):
     # Arrange
-    expected_spot   = 6_718_840
-    expected_net    = 159_404
-    expected_total  = expected_spot + expected_net  # 6_878_244
+    expected_spot  = 6_718_840
+    expected_net   = 159_404
+    expected_total = expected_spot + expected_net  # 6_878_244
 
     # Act
     result = calc_grand_total(spot_entries, filled_trades)
@@ -203,43 +203,7 @@ def test_grand_total_es_spot_mas_net_pnl(spot_entries, filled_trades):
     # Assert
     assert result == expected_total == 6_878_244
 
-# ── validate_funding_sign ─────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("direction,funding_rate,funding_cost,expected", [
-    # Tasa positiva → Short recibe (cost negativo) ✅
-    ("Short", +0.01,  -538, True),
-    # Tasa positiva → Short paga (cost positivo) ❌ — dato inconsistente
-    ("Short", +0.01,  +538, False),
-    # Tasa positiva → Long paga (cost positivo) ✅
-    ("Long",  +0.01,  +538, True),
-    # Tasa positiva → Long recibe (cost negativo) ❌ — dato inconsistente
-    ("Long",  +0.01,  -538, False),
-    # Tasa negativa → Short paga (cost positivo) ✅
-    ("Short", -0.01,  +135, True),
-    # Tasa negativa → Short recibe (cost negativo) ❌ — dato inconsistente
-    ("Short", -0.01,  -135, False),
-    # Tasa negativa → Long recibe (cost negativo) ✅
-    ("Long",  -0.01,  -135, True),
-    # Tasa negativa → Long paga (cost positivo) ❌ — dato inconsistente
-    ("Long",  -0.01,  +135, False),
-    # Funding cero → siempre válido independiente de la tasa
-    ("Short", +0.01,     0, True),
-    ("Long",  -0.01,     0, True),
-    # Tasa cero con funding no cero → inconsistente (sin tasa no debería haber costo)
-    ("Short",  0.00,  +100, False),
-    ("Long",   0.00,  -100, False),
-])
-def test_validate_funding_sign(direction, funding_rate, funding_cost, expected):
-    # Arrange — combinación de dirección, tasa y costo viene del parámetro
-
-    # Act
-    result = validate_funding_sign(direction, funding_rate, funding_cost)
-
-    # Assert
-    assert result == expected
-
-
-def test_grand_total_sin_trades(spot_entries):
+def test_grand_total_no_trades(spot_entries):
     # Arrange
     trades = []
 
@@ -249,8 +213,8 @@ def test_grand_total_sin_trades(spot_entries):
     # Assert
     assert result == calc_spot_total(spot_entries)
 
-def test_grand_total_negativo_cuando_perdidas_superan_spot():
-    # Arrange — pérdidas en trades mayores que el balance spot
+def test_grand_total_negative_when_losses_exceed_spot():
+    # Arrange — trade losses greater than spot balance
     spot   = [{"sats": 10_000}]
     trades = [{"status": "Filled", "pnl": -50_000, "trading_fees": 0, "funding_cost": 0}]
 
@@ -259,3 +223,39 @@ def test_grand_total_negativo_cuando_perdidas_superan_spot():
 
     # Assert
     assert result == -40_000
+
+
+# ── validate_funding_sign ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("direction,funding_rate,funding_cost,expected", [
+    # Positive rate → Short receives (negative cost) ✅
+    ("Short", +0.01,  -538, True),
+    # Positive rate → Short pays (positive cost) ❌ — inconsistent data
+    ("Short", +0.01,  +538, False),
+    # Positive rate → Long pays (positive cost) ✅
+    ("Long",  +0.01,  +538, True),
+    # Positive rate → Long receives (negative cost) ❌ — inconsistent data
+    ("Long",  +0.01,  -538, False),
+    # Negative rate → Short pays (positive cost) ✅
+    ("Short", -0.01,  +135, True),
+    # Negative rate → Short receives (negative cost) ❌ — inconsistent data
+    ("Short", -0.01,  -135, False),
+    # Negative rate → Long receives (negative cost) ✅
+    ("Long",  -0.01,  -135, True),
+    # Negative rate → Long pays (positive cost) ❌ — inconsistent data
+    ("Long",  -0.01,  +135, False),
+    # Zero funding cost → always valid regardless of rate
+    ("Short", +0.01,     0, True),
+    ("Long",  -0.01,     0, True),
+    # Zero rate with non-zero cost → inconsistent (no rate should produce no cost)
+    ("Short",  0.00,  +100, False),
+    ("Long",   0.00,  -100, False),
+])
+def test_validate_funding_sign(direction, funding_rate, funding_cost, expected):
+    # Arrange — combination of direction, rate and cost comes from parameter
+
+    # Act
+    result = validate_funding_sign(direction, funding_rate, funding_cost)
+
+    # Assert
+    assert result == expected
